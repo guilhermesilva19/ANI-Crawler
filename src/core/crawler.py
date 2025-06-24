@@ -1,0 +1,204 @@
+"""Core crawler implementation."""
+
+import os
+import time
+import hashlib
+from typing import Dict, Set, Optional, Tuple, List, Any
+from urllib.parse import urlparse
+from bs4 import BeautifulSoup
+
+from src.services.browser_service import BrowserService
+from src.services.drive_service import DriveService
+from src.services.slack_service import SlackService
+from src.utils.content_comparison import compare_content, extract_links
+from src.utils.state_manager import StateManager
+from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD
+
+__all__ = ['Crawler']
+
+
+class Crawler:
+    """Main crawler class that handles webpage monitoring and change detection."""
+    
+    def __init__(self):
+        self.state_manager = StateManager()
+        self.drive_service = DriveService()
+        self.slack_service = SlackService()
+        
+        # Setup proxy options if credentials are available
+        self.proxy_options = None
+        if all([PROXY_USERNAME, PROXY_PASSWORD, PROXY_URL]):
+            self.proxy_options = {
+                "http": f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_URL}",
+                "https": f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_URL}",
+            }
+            print(f"\nProxy configured: {self.proxy_options['http']}")
+        
+        self.browser_service = None  # Will be initialized per page
+
+    def generate_filename(self, url: str) -> str:
+        """Generate a unique filename for a URL."""
+        url_hash = hashlib.md5(url.encode()).hexdigest()[:10]
+        base_url = urlparse(url).netloc.replace('.', '_')
+        return f"page_copies/{base_url}_{url_hash}.html"
+
+    def process_page(self, url: str) -> None:
+        """Process a single page: fetch, compare, and store changes."""
+        try:
+            # Initialize browser for this page
+            self.browser_service = BrowserService(self.proxy_options)
+
+            # Fetch and parse page
+            soup = self.browser_service.get_page(url)
+            if not soup:
+                raise Exception("Failed to fetch page")
+
+            # Generate filenames
+            filename = self.generate_filename(url)
+            old_file = filename + ".old"
+
+            # Create folder structure in Drive
+            safe_filename = self.browser_service._get_safe_filename(url)
+            folder_id, _ = self.drive_service.get_or_create_folder(safe_filename)
+            html_folder_id, _ = self.drive_service.get_or_create_folder("HTML", folder_id)
+            screenshot_folder_id, _ = self.drive_service.get_or_create_folder("SCREENSHOT", folder_id)
+
+            # Save current version
+            with open(filename, "w", encoding="utf-8") as f:
+                f.write(soup.prettify())
+
+            # Take screenshot
+            screenshot_path, _ = self.browser_service.save_screenshot(url)
+            if screenshot_path:
+                screenshot_url = self.drive_service.upload_file(screenshot_path, screenshot_folder_id)
+                os.remove(screenshot_path)
+
+            # Handle file versions in Drive
+            new_file_id = self.drive_service.find_file(os.path.basename(filename), html_folder_id)
+            old_file_id = self.drive_service.find_file(os.path.basename(old_file), html_folder_id)
+
+            # Check if this is a new page
+            is_new_page = not old_file_id and not self.state_manager.was_visited(url)
+            
+            if is_new_page:
+                # Send new page notification using format_change_message
+                blocks = self.slack_service.format_change_message(
+                    url,
+                    [], [], [],  # No content changes for new page
+                    {'added_links': set(), 'removed_links': set(), 'added_pdfs': set(), 'removed_pdfs': set()},
+                    f"https://drive.google.com/drive/folders/{screenshot_folder_id}",
+                    f"https://drive.google.com/drive/folders/{html_folder_id}",
+                    is_new_page=True
+                )
+                self.slack_service.send_message(blocks)
+            elif old_file_id:
+                # Compare versions for existing page
+                self.drive_service.download_file(old_file_id, old_file)
+                with open(old_file, "r", encoding="utf-8") as f:
+                    old_content = f.read()
+                with open(filename, "r", encoding="utf-8") as f:
+                    new_content = f.read()
+
+                # Compare content with enhanced detection
+                added, deleted, changed = compare_content(old_content, new_content)
+
+                # Extract and compare links
+                old_links = extract_links(url, BeautifulSoup(old_content, 'html.parser'), CHECK_PREFIX)
+                new_links = extract_links(url, BeautifulSoup(new_content, 'html.parser'), CHECK_PREFIX)
+
+                # Find changes in links
+                added_links = new_links - old_links
+                removed_links = old_links - new_links
+                added_pdfs = {link for link in added_links if link.lower().endswith('.pdf')}
+                removed_pdfs = {link for link in removed_links if link.lower().endswith('.pdf')}
+
+                links_changes = {
+                    'added_links': added_links - added_pdfs,
+                    'removed_links': removed_links - removed_pdfs,
+                    'added_pdfs': added_pdfs,
+                    'removed_pdfs': removed_pdfs
+                }
+
+                # Format changes for notification
+                added_text = self.format_change_blocks(added, "Added")
+                deleted_text = self.format_change_blocks(deleted, "Deleted")
+                changed_text = self.format_change_pairs(changed)
+
+                # If there are any changes, send notification
+                if any([added_text, deleted_text, changed_text]) or any(links_changes.values()):
+                    blocks = self.slack_service.format_change_message(
+                        url,
+                        added_text,
+                        deleted_text,
+                        changed_text,
+                        links_changes,
+                        f"https://drive.google.com/drive/folders/{screenshot_folder_id}",
+                        f"https://drive.google.com/drive/folders/{html_folder_id}",
+                        is_new_page=False
+                    )
+                    self.slack_service.send_message(blocks)
+
+                # Clean up old files
+                os.remove(old_file)
+
+            # Upload new version and rename old version
+            if new_file_id:
+                self.drive_service.rename_file(new_file_id, os.path.basename(old_file))
+            self.drive_service.upload_file(filename, html_folder_id)
+            os.remove(filename)
+
+            # Extract new links to crawl
+            new_links = extract_links(url, soup, CHECK_PREFIX)
+            self.state_manager.add_new_urls(new_links)
+
+            # Update state
+            self.state_manager.add_visited_url(url)
+            self.state_manager.log_scanned_page(url)
+
+        except Exception as e:
+            self.slack_service.send_error(str(e), url)
+            print(f"\nError processing page {url}: {e}")
+
+        finally:
+            if self.browser_service:
+                self.browser_service.quit()
+
+    def format_change_blocks(self, changes: List[Dict[str, Any]], change_type: str) -> List[Dict[str, Any]]:
+        """Format changes into blocks for notification."""
+        return changes  # Changes are already in the correct format
+
+    def format_change_pairs(self, changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Format change pairs into blocks for notification."""
+        return changes  # Changes are already in the correct format
+
+    def run(self) -> None:
+        """Main crawl loop."""
+        try:
+            while True:
+                url = self.state_manager.get_next_url()
+                if not url:
+                    print("\nNo URLs remaining. Waiting for recrawl...")
+                    time.sleep(300)  # Wait 5 minutes before checking again
+                    continue
+
+                # Clean URL
+                url = url.rstrip("/")
+                
+                # Skip if URL should be excluded
+                if '#' in url or (CHECK_PREFIX and url.startswith(CHECK_PREFIX)):
+                    continue
+
+                print(f"\nCrawling: {url}")
+                self.process_page(url)
+                
+                # Polite delay between requests
+                time.sleep(30)
+
+        except KeyboardInterrupt:
+            print("\nCrawling interrupted by user.")
+        except Exception as e:
+            self.slack_service.send_error(f"Critical crawler error: {str(e)}")
+            print(f"\nCritical error: {e}")
+        finally:
+            if self.browser_service:
+                self.browser_service.quit() 

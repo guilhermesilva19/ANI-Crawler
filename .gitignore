@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+*.pkl
+page_copies/
+page_changes/
+page_screenshots/
+scanned_pages.txt
+crawl_progress.pkl
+next_crawl.pkl
+
+# Credentials and Secrets
+ani-v3-service_account*.json
+*.pem
+*.key
+
+# Logs
+*.log
+logs/
+
+# OS specific
+.DS_Store
+Thumbs.db 
