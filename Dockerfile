@@ -1,49 +1,33 @@
-# Use a slim Python base image
 FROM python:3.11-slim
 
-# Avoid interactive prompts during apt install
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install Chrome dependencies and Chrome itself
-RUN apt-get update && \
-    apt-get install -y wget unzip gnupg ca-certificates \
-    fonts-liberation libnss3 libgconf-2-4 libxi6 libxcursor1 \
-    libxdamage1 libxtst6 libappindicator1 libgtk-3-0 \
-    --no-install-recommends && \
-    wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
-    dpkg -i google-chrome-stable_current_amd64.deb || apt-get -fy install && \
-    rm google-chrome-stable_current_amd64.deb && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Set environment to headless mode
-ENV DISPLAY=:99
-
-# Install Python packages
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Add your code
-COPY . /app
-WORKDIR /app
-
-# Run your crawler
-CMD ["python", "crawler.py"]
-
-FROM python:3.11-slim
-
-# Install system dependencies
+# Install system dependencies and Chrome
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
-    chromium \
-    chromium-driver \
+    curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Chrome
+RUN curl -LO https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && apt-get update \
+    && apt-get install -y ./google-chrome-stable_current_amd64.deb \
+    && rm google-chrome-stable_current_amd64.deb \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ChromeDriver
+RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | awk -F'.' '{print $1}') \
+    && CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_VERSION}") \
+    && curl -Lo /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip" \
+    && unzip /tmp/chromedriver.zip -d /usr/local/bin/ \
+    && rm /tmp/chromedriver.zip \
+    && chmod +x /usr/local/bin/chromedriver
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    CHROME_BIN=/usr/bin/chromium \
-    CHROMEDRIVER_PATH=/usr/bin/chromedriver
+    CHROME_BIN=/usr/bin/google-chrome \
+    CHROMEDRIVER_PATH=/usr/local/bin/chromedriver
 
 # Set working directory
 WORKDIR /app
