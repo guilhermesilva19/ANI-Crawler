@@ -22,12 +22,13 @@ class DriveService:
         try:
             load_dotenv()
             
+            print(os.getenv("PRIVATE_KEY"))
             # Get service account info from environment variables
             service_account_info = {
                 "type": os.getenv("TYPE"),
                 "project_id": os.getenv("PROJECT_ID"),
                 "private_key_id": os.getenv("PRIVATE_KEY_ID"),
-                "private_key": os.getenv("PRIVATE_KEY").replace('\\n', '\n'),
+                "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCEypwFBVXqcLHs\nB9GOvMeVIvouQ2xuA3Gt4i4uXMZntdKv/qYJcM3vK1rcnL6Z72B9+LOPnepIOMrG\netYO3Bw500dSyNWCfWe6SIEhHpaX4muBNoyip+JAQozNCQ86/mZ+iOItFDn+jM8R\nrXm/AsQzao5EUbWo7GdhBDhvYiqwmXoSkYC6tO0vfwQSi3V56JTXAl8vscvPGd6w\nnVK3K1ZDpPHWWHJQnPgrnrGmA5Y9yj8sdyuRyC1zixC1vdXnIN3fxt0X6KyrTdEV\nwQooclzhN2XE12kVweMfmu03S+vp9mVBaBHOBI/CmoLaDl2QA8cdnsFdgl0DOIiZ\nFts3qhiTAgMBAAECggEAAcAcxv4qg0Qhoq+TTH/iW6EFGwrQr5fEOsGo0GI9shlJ\nLs1Uoy3SMSBpR4MAPWduTLE0elffdXAP0DnHTGI/ZwDveqcvruz4EV8Qs+Vc09S5\nJdz+62THv6DnWgtc0+8nKuzWZzfrvPzEyZvEgPpiDrfaKnFifr8OOWh37y2KmLhW\nvh90p3vdVvxKxYqdrsLkwlF6pVrem7UxJFMTFmEMcH9g/fy7UpMKB7Eci/02taYB\nMTu0SoAPAm3AGaAIpqcBEX9VO5D8PX3q5OsaXO/dI8711uRXkzHNF7w1sfGrJnWK\nZ3C4FAuXiELwiQZbhTjC2ugshs2+CMconPDJ0KUD+QKBgQC7n4aFmiz7isQpgX84\necWKUFodc+sOvUtzbT12ypnpFevzmqiT7VK6x/KX9yGh54bXHp8YOIZbOW4oNpbl\n9BkMwDvcPrnzLWAeT4jGOqaisiRyNtE0oQ/XwkCv1TRlLLGkixyb0b2xZFefPzBe\nxnMBuwD0jr2id1ejLhmWJ4yY+wKBgQC1L4J33tvMaNUAuVo5sDk68WJc7TMeGEvA\nitCb/Vv+GafWrt0V+kgicZZlwEJhfJqxgNJCpEX3ie04Vdz68oKrXseQeuKBo+48\nYSwAtZLtdRE37rFYepHldAVkL8GQAZroMGBJk3k4yt/x/M572FQHtqWsKKAIHqc0\nCN+1ilAbSQKBgBL7zhmgguKkpLpqXtvw/jrDbIrEWskv//1a1Tg6wZ3i2O/Z+yqU\nfaVma7ZSi/WcvnjvoTtLJNUAF5Q8CcKUkyBGJwhe1GO1eJ84fudHseqOSb/AqiRA\nE6FKB0+DK/z8q7CxXqCpdR8IvxDezN8aBzLqn+sesjNJDfX1ySL3N3OXAoGACGhA\n9JD5v/1pTNRM9HpR3YNP3iH/ijj0YuXOEj7qYtsL57FLfvaTHE4K/YOzUNS4VN42\nY3M97+ONh1ysmVRhbdRDDFg3ZG6X4mNb6FiEjdItz1ubDRD67hu5GFIC+EyqxHVi\nMmfOay02wQLLDgIWvBjkjR2Bd378oTR8NO9LEkkCgYBScgeSfWi6seS6s67ryiQ7\n/Cn9Z6REs+s17M/Gm9WPv7ueTThcN+IFUrLYrXlW7vauEgob6xHQu3dsGKOtyO32\nNEhxf+PkyRJeN9Uq2Zxsb7V8JzVeY0UPYyItH54PI2Ffa5yul2Ty0GAMQqOCOtb+\nG1er+4j9PKtRks5F0v+abA==\n-----END PRIVATE KEY-----\n",
                 "client_email": os.getenv("CLIENT_EMAIL"), 
                 "client_id": os.getenv("CLIENT_ID"),
                 "auth_uri": os.getenv("AUTH_URI"),
@@ -40,7 +41,10 @@ class DriveService:
                 service_account_info, scopes=SCOPES
             )
 
-            return build('drive', 'v3', credentials=credentials)
+            service =  build('drive', 'v3', credentials=credentials)
+            service.files().list(pageSize=1).execute()
+            print("\nGoogle Drive service initialized successfully")
+            return service
         except Exception as e:
             print(f"\nError initializing Drive service: {e}")
             return None
