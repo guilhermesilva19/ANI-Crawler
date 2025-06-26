@@ -17,22 +17,21 @@ RUN apt-get update && apt-get install -y \
     libgbm1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Chrome and ChromeDriver with fixed versions
-ENV CHROME_VERSION="114.0.5735.90-1"
-ENV CHROMEDRIVER_VERSION="114.0.5735.90"
+# Download and install Chrome
+RUN apt-get update && apt-get install -y wget gnupg2 apt-transport-https ca-certificates && \
+    mkdir -p /etc/apt/keyrings && \
+    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /etc/apt/keyrings/google.gpg && \
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google.gpg] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list && \
+    apt-get update && \
+    apt-get install -y google-chrome-stable && \
+    rm -rf /var/lib/apt/lists/*
 
-# Add Chrome's repository and install Chrome
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable=$CHROME_VERSION \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install matching ChromeDriver version
-RUN wget -q "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip" -O /tmp/chromedriver.zip \
-    && unzip /tmp/chromedriver.zip -d /usr/local/bin/ \
-    && rm /tmp/chromedriver.zip \
-    && chmod +x /usr/local/bin/chromedriver
+# Get Chrome version and install matching ChromeDriver
+RUN CHROME_VERSION=$(google-chrome-stable --version | awk '{ print $3 }' | awk -F. '{ print $1"."$2"."$3 }') && \
+    wget -q "https://chromedriver.storage.googleapis.com/${CHROME_VERSION}/chromedriver_linux64.zip" -O /tmp/chromedriver.zip && \
+    unzip /tmp/chromedriver.zip -d /usr/local/bin/ && \
+    rm /tmp/chromedriver.zip && \
+    chmod +x /usr/local/bin/chromedriver
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
