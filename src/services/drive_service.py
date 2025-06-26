@@ -4,10 +4,12 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload # type: ig
 
 import io
 import os
+import json
+from dotenv import load_dotenv
 import mimetypes
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, Any, List
-from src.config import SCOPES, SERVICE_ACCOUNT_FILE
+from src.config import SCOPES
 
 __all__ = ['DriveService']
 
@@ -18,9 +20,26 @@ class DriveService:
     def _initialize_service(self):
         """Initialize and return the Google Drive service."""
         try:
-            credentials = service_account.Credentials.from_service_account_file(
-                SERVICE_ACCOUNT_FILE, scopes=SCOPES
+            load_dotenv()
+            
+            # Get service account info from environment variables
+            service_account_info = {
+                "type": os.getenv("TYPE"),
+                "project_id": os.getenv("PROJECT_ID"),
+                "private_key_id": os.getenv("PRIVATE_KEY_ID"),
+                "private_key": os.getenv("PRIVATE_KEY").replace('\\n', '\n'),
+                "client_email": os.getenv("CLIENT_EMAIL"), 
+                "client_id": os.getenv("CLIENT_ID"),
+                "auth_uri": os.getenv("AUTH_URI"),
+                "token_uri": os.getenv("TOKEN_URI"),
+                "auth_provider_x509_cert_url": os.getenv("AUTH_PROVIDER_x509_CERT_URL"),
+                "client_x509_cert_url": os.getenv("CLIENT_X509_CERT_URL"),  
+            }
+
+            credentials = service_account.Credentials.from_service_account_info(
+                service_account_info, scopes=SCOPES
             )
+
             return build('drive', 'v3', credentials=credentials)
         except Exception as e:
             print(f"\nError initializing Drive service: {e}")
