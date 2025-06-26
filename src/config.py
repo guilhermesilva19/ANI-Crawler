@@ -12,7 +12,6 @@ CHECK_PREFIX = os.getenv('CHECK_PREFIX')
 
 # Google Drive Configuration
 SCOPES = ['https://www.googleapis.com/auth/drive']
-SERVICE_ACCOUNT_FILE = 'ani-v3-service_account_live.json'
 PAGE_CHANGES_FOLDER_ID = os.getenv('PAGE_CHANGES_FOLDER_ID')
 TOP_PARENT_ID = os.getenv('FOLDER_PARENT_ID')
 
