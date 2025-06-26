@@ -20,5 +20,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . /main
 WORKDIR /main
 
+# Create necessary directories and set permissions
+RUN mkdir -p page_changes page_copies page_screenshots && \
+    chown -R appuser:appuser /app
+
 # Run app
 CMD ["python", "main.py"]
