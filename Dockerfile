@@ -21,8 +21,7 @@ COPY . /main
 WORKDIR /main
 
 # Create necessary directories and set permissions
-RUN mkdir -p page_changes page_copies page_screenshots && \
-    chown -R appuser:appuser /app
+RUN mkdir -p page_changes page_copies page_screenshots
 
 # Run app
 CMD ["python", "main.py"]
