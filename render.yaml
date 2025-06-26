@@ -1,0 +1,46 @@
+services:
+  - type: worker
+    name: ani-crawler
+    env: python
+    region: singapore  # You can change this to your preferred region
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.0
+      - key: TYPE
+        sync: false
+      - key: PROJECT_ID
+        sync: false
+      - key: PRIVATE_KEY_ID
+        sync: false
+      - key: PRIVATE_KEY
+        sync: false
+      - key: CLIENT_EMAIL
+        sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: AUTH_URI
+        sync: false
+      - key: TOKEN_URI
+        sync: false
+      - key: AUTH_PROVIDER_x509_CERT_URL
+        sync: false
+      - key: CLIENT_X509_CERT_URL
+        sync: false
+      - key: PAGE_CHANGES_FOLDER_ID
+        sync: false
+      - key: FOLDER_PARENT_ID
+        sync: false
+      - key: PROXY_URL
+        sync: false
+      - key: PROXY_USERNAME
+        sync: false
+      - key: PROXY_PASSWORD
+        sync: false
+      - key: CHECK_PREFIX
+        sync: false
+      - key: SLACK_TOKEN
+        sync: false
+      - key: CHANNEL_ID
+        sync: false 
