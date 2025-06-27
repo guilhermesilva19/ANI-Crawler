@@ -156,7 +156,7 @@ class Crawler:
             self.state_manager.log_scanned_page(url)
 
         except Exception as e:
-            self.slack_service.send_error(str(e), url)
+            #self.slack_service.send_error(str(e), url)
             print(f"\nError processing page {url}: {e}")
 
         finally:
