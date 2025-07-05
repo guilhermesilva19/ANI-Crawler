@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from src.services.browser_service import BrowserService
 from src.services.drive_service import DriveService
 from src.services.slack_service import SlackService
+from src.services.sheets_service import SheetsService
 from src.utils.content_comparison import compare_content, extract_links
 from src.utils.state_manager import StateManager
 from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID
@@ -24,6 +25,15 @@ class Crawler:
         self.state_manager = StateManager()
         self.drive_service = DriveService()
         self.slack_service = SlackService()
+        
+        # Initialize Google Sheets service for logging
+        try:
+            self.sheets_service = SheetsService()
+            print(f"📊 Sheets logging enabled: {self.sheets_service.get_spreadsheet_url()}")
+        except Exception as e:
+            print(f"⚠️  Sheets service failed to initialize: {e}")
+            print("📱 Continuing with Slack-only logging...")
+            self.sheets_service = None
         
         # Setup proxy options if credentials are available
         self.proxy_options = None
@@ -50,9 +60,29 @@ class Crawler:
         """Process a single page: fetch, compare, and store changes."""
         try:
             # Fetch and parse page
-            soup = self.browser_service.get_page(url)
+            soup, status_code = self.browser_service.get_page(url)
+            
+            # Check for deleted page before processing
+            is_deleted_page = self.state_manager.update_url_status(url, status_code)
+            if is_deleted_page:
+                # Get last successful access time for the alert
+                url_status = self.state_manager.url_status.get(url, {})
+                last_success = url_status.get('last_success')
+                
+                # Send deleted page alert to Slack
+                self.slack_service.send_deleted_page_alert(url, status_code, last_success)
+                
+                # Log to Google Sheets
+                if self.sheets_service:
+                    self.sheets_service.log_deleted_page_alert(url, status_code, last_success)
+                
+                print(f"\nDeleted page detected: {url} (Status: {status_code})")
+                return  # Don't process further
+            
             if not soup:
-                raise Exception("Failed to fetch page")
+                # Page failed to load but not classified as deleted yet
+                print(f"\nFailed to load page {url} (Status: {status_code})")
+                return
 
             # Generate filenames
             filename = self.generate_filename(url)
@@ -92,6 +122,14 @@ class Crawler:
                     is_new_page=True
                 )
                 self.slack_service.send_message(blocks)
+                
+                # Log to Google Sheets
+                if self.sheets_service:
+                    self.sheets_service.log_new_page_alert(
+                        url,
+                        f"https://drive.google.com/drive/folders/{screenshot_folder_id}",
+                        f"https://drive.google.com/drive/folders/{html_folder_id}"
+                    )
             elif old_file_id:
                 # Compare versions for existing page
                 self.drive_service.download_file(old_file_id, old_file)
@@ -138,6 +176,17 @@ class Crawler:
                         is_new_page=False
                     )
                     self.slack_service.send_message(blocks)
+                    
+                    # Log to Google Sheets
+                    if self.sheets_service:
+                        # Create description from changes
+                        changes_desc = self._format_changes_for_sheets(added_text, deleted_text, changed_text, links_changes)
+                        self.sheets_service.log_changed_page_alert(
+                            url,
+                            changes_desc,
+                            f"https://drive.google.com/drive/folders/{screenshot_folder_id}",
+                            f"https://drive.google.com/drive/folders/{html_folder_id}"
+                        )
 
                 # Clean up old files
                 os.remove(old_file)
@@ -167,6 +216,31 @@ class Crawler:
     def format_change_pairs(self, changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Format change pairs into blocks for notification."""
         return changes  # Changes are already in the correct format
+
+    def _format_changes_for_sheets(self, added: List[Dict[str, Any]], deleted: List[Dict[str, Any]], 
+                                  changed: List[Dict[str, Any]], links_changes: Dict[str, Set[str]]) -> str:
+        """Format changes into a concise description for Google Sheets."""
+        parts = []
+        
+        # Text changes
+        if added:
+            parts.append(f"Added {len(added)} text sections")
+        if deleted:
+            parts.append(f"Removed {len(deleted)} text sections")
+        if changed:
+            parts.append(f"Modified {len(changed)} text sections")
+        
+        # Link changes
+        if links_changes.get('added_links'):
+            parts.append(f"Added {len(links_changes['added_links'])} links")
+        if links_changes.get('removed_links'):
+            parts.append(f"Removed {len(links_changes['removed_links'])} links")
+        if links_changes.get('added_pdfs'):
+            parts.append(f"Added {len(links_changes['added_pdfs'])} PDFs")
+        if links_changes.get('removed_pdfs'):
+            parts.append(f"Removed {len(links_changes['removed_pdfs'])} PDFs")
+        
+        return "; ".join(parts) if parts else "Page content changed"
 
     def run(self) -> None:
         """Main crawl loop."""
