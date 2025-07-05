@@ -66,15 +66,30 @@ class BrowserService:
         if self.driver:
             self.driver.quit()
 
-    def get_page(self, url: str) -> Optional[BeautifulSoup]:
-        """Load a page and return its parsed content."""
+    def get_page(self, url: str) -> Tuple[Optional[BeautifulSoup], int]:
+        """Load a page and return its parsed content along with HTTP status code."""
         try:
             self.driver.get(url)
             time.sleep(10)  # Wait for page load
-            return BeautifulSoup(self.driver.page_source, 'html.parser')
+            
+            # Get HTTP status from selenium-wire
+            status_code = 200  # Default to success
+            for request in self.driver.requests:
+                if request.url == url and request.response:
+                    status_code = request.response.status_code
+                    break
+            
+            # Check if page loaded successfully
+            if status_code >= 400:
+                print(f"\nHTTP {status_code} for {url}")
+                return None, status_code
+                
+            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            return soup, status_code
+            
         except Exception as e:
             print(f"\nError loading page {url}: {e}")
-            return None
+            return None, 0  # 0 indicates connection/network error
 
     def scroll_full_page(self, pause_time: float = 1.5) -> None:
         """Scroll down incrementally until the bottom of the page is reached."""

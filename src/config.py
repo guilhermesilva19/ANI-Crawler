@@ -11,7 +11,10 @@ PROXY_PASSWORD = os.getenv('PROXY_PASSWORD')
 CHECK_PREFIX = os.getenv('CHECK_PREFIX')
 
 # Google Drive Configuration
-SCOPES = ['https://www.googleapis.com/auth/drive']
+SCOPES = [
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/spreadsheets'
+]
 PAGE_CHANGES_FOLDER_ID = os.getenv('PAGE_CHANGES_FOLDER_ID')
 TOP_PARENT_ID = os.getenv('FOLDER_PARENT_ID')
 
@@ -33,6 +36,7 @@ EXCLUDE_PREFIXES = [
     "https://www.education.gov.au/newsroom",
     "https://ministers.education.gov.au/clare"
 ]
+
 
 
 # Browser Configuration

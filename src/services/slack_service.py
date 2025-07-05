@@ -196,6 +196,62 @@ class SlackService:
         except SlackApiError as e:
             print(f"\nError sending consolidated message to Slack: {e.response['error']}")
 
+    def send_deleted_page_alert(self, page_url: str, status_code: int, last_success: Optional[datetime] = None) -> None:
+        """Send an alert for a deleted page."""
+        try:
+            # Format the deleted page message
+            blocks = [
+                {
+                    "type": "header",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "🗑️ Deleted Page"
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*Page URL:* {page_url}\n*Status Code:* {status_code}"
+                    }
+                }
+            ]
+            
+            # Add last successful access time if available
+            if last_success:
+                blocks.append({
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*Last Successful Access:* {last_success.strftime('%Y-%m-%d %H:%M:%S')}"
+                    }
+                })
+            
+            # Add footer with timestamp
+            blocks.extend([
+                {"type": "divider"},
+                {
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": f"Detected: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                        }
+                    ]
+                }
+            ])
+            
+            # Send the message
+            self.client.chat_postMessage(
+                channel=self.channel,
+                blocks=blocks,
+                text=f"Deleted page detected: {page_url}"  # Fallback text
+            )
+            print(f"\nSent deleted page alert for: {page_url}")
+            
+        except SlackApiError as e:
+            print(f"\nError sending deleted page alert to Slack: {e.response['error']}")
+
     def send_message(self, blocks: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Send a message to Slack using blocks format."""
         try:
