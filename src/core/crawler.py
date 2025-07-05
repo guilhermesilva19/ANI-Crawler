@@ -12,7 +12,7 @@ from src.services.drive_service import DriveService
 from src.services.slack_service import SlackService
 from src.utils.content_comparison import compare_content, extract_links
 from src.utils.state_manager import StateManager
-from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD
+from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID
 
 __all__ = ['Crawler']
 
@@ -34,10 +34,14 @@ class Crawler:
             }
             print(f"\nProxy configured: {self.proxy_options['http']}")
         
-        self.browser_service = None  # Will be initialized per page
+        # Initialize browser once for entire session
+        self.browser_service = BrowserService(self.proxy_options)
 
     def generate_filename(self, url: str) -> str:
         """Generate a unique filename for a URL."""
+        # Ensure page_copies directory exists
+        os.makedirs("page_copies", exist_ok=True)
+        
         url_hash = hashlib.md5(url.encode()).hexdigest()[:10]
         base_url = urlparse(url).netloc.replace('.', '_')
         return f"page_copies/{base_url}_{url_hash}.html"
@@ -45,9 +49,6 @@ class Crawler:
     def process_page(self, url: str) -> None:
         """Process a single page: fetch, compare, and store changes."""
         try:
-            # Initialize browser for this page
-            self.browser_service = BrowserService(self.proxy_options)
-
             # Fetch and parse page
             soup = self.browser_service.get_page(url)
             if not soup:
@@ -59,7 +60,7 @@ class Crawler:
 
             # Create folder structure in Drive
             safe_filename = self.browser_service._get_safe_filename(url)
-            folder_id, _ = self.drive_service.get_or_create_folder(safe_filename)
+            folder_id, _ = self.drive_service.get_or_create_folder(safe_filename, TOP_PARENT_ID)
             html_folder_id, _ = self.drive_service.get_or_create_folder("HTML", folder_id)
             screenshot_folder_id, _ = self.drive_service.get_or_create_folder("SCREENSHOT", folder_id)
 
@@ -158,10 +159,6 @@ class Crawler:
         except Exception as e:
             #self.slack_service.send_error(str(e), url)
             print(f"\nError processing page {url}: {e}")
-
-        finally:
-            if self.browser_service:
-                self.browser_service.quit()
 
     def format_change_blocks(self, changes: List[Dict[str, Any]], change_type: str) -> List[Dict[str, Any]]:
         """Format changes into blocks for notification."""

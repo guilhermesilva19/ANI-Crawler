@@ -46,8 +46,14 @@ class BrowserService:
             if self.proxy_options:
                 seleniumwire_options['proxy'] = self.proxy_options
 
+            # Try automatic download, fallback to manual path
+            try:
+                driver_path = ChromeDriverManager().install()
+            except:
+                driver_path = r"chromedriver\chromedriver-win64\chromedriver-win64\chromedriver.exe"
+
             self.driver = webdriver.Chrome(
-                service=Service(ChromeDriverManager().install()),
+                service=Service(driver_path),
                 options=chrome_options,
                 seleniumwire_options=seleniumwire_options if self.proxy_options else None
             )

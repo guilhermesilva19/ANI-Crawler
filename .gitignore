@@ -31,7 +31,9 @@ ENV/
 .vscode/
 *.swp
 *.swo
-
+.venv/
+.venv/
+venv
 # Project specific
 *.pkl
 page_copies/
@@ -45,7 +47,9 @@ next_crawl.pkl
 ani-v3-service_account*.json
 *.pem
 *.key
-
+chrome_driver/
+chromedriver/
+page_copies/
 # Logs
 *.log
 logs/
