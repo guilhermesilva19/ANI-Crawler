@@ -311,7 +311,7 @@ class Crawler:
                 # Show progress every 10 pages
                 if pages_processed_this_session % 10 == 0:
                     stats = self.state_manager.get_progress_stats()
-                    print(f"\n📊 Progress: {stats['completed_pages']}/{stats['total_pages_estimate']} ({stats['progress_percent']}%) - {stats['pages_per_hour']:.0f} pages/hour")
+                    print(f"\n📊 Progress: {stats['completed_pages']}/{stats['total_known_pages']} ({stats['progress_percent']}%) - {stats['pages_per_hour']:.0f} pages/hour")
                     if stats['eta_datetime']:
                         print(f"⏰ ETA: {stats['eta_datetime'].strftime('%I:%M %p today' if stats['eta_datetime'].date() == datetime.now().date() else '%b %d at %I:%M %p')}")
                 

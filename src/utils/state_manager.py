@@ -243,9 +243,10 @@ class StateManager:
         completed_pages = len(self.visited_urls)
         remaining_pages = len(self.remaining_urls)
         
-        # Calculate progress percentage
-        if self.total_pages_estimate > 0:
-            progress_percent = (completed_pages / self.total_pages_estimate) * 100
+        # Calculate progress percentage based on discovered pages (queue-based)
+        total_known_pages = completed_pages + remaining_pages
+        if total_known_pages > 0:
+            progress_percent = (completed_pages / total_known_pages) * 100
         else:
             progress_percent = 0.0
         
@@ -278,7 +279,7 @@ class StateManager:
         
         return {
             'completed_pages': completed_pages,
-            'total_pages_estimate': self.total_pages_estimate,
+            'total_known_pages': total_known_pages,
             'remaining_pages': remaining_pages,
             'progress_percent': round(progress_percent, 1),
             'avg_crawl_time_seconds': round(avg_crawl_time, 1),
@@ -288,7 +289,7 @@ class StateManager:
             'is_first_cycle': self.is_first_cycle,
             'cycle_duration_days': cycle_duration.days,
             'today_stats': today_stats,
-            'total_discovered': len(self.visited_urls) + len(self.remaining_urls)
+            'total_discovered': total_known_pages
         }
     
     def complete_cycle(self) -> None:

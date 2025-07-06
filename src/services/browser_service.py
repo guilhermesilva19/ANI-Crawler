@@ -49,7 +49,8 @@ class BrowserService:
             # Try automatic download, fallback to manual path
             try:
                 driver_path = ChromeDriverManager().install()
-            except:
+            except Exception as e:
+                print(f"⚠️  ChromeDriver installation failed: {e}")
                 driver_path = r"chromedriver\chromedriver-win64\chromedriver-win64\chromedriver.exe"
 
             self.driver = webdriver.Chrome(
