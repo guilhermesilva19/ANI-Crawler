@@ -119,7 +119,6 @@ def test_deleted_page_detection():
 
 def test_multiple_failures():
     """Test detection after multiple failures (not just 404)."""
-    print("\n🔄 BONUS TEST: Multiple failures detection...")
     
     test_url = "https://www.education.gov.au/test-multiple-failures"
     state_manager = StateManager()

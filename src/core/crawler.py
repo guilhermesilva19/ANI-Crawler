@@ -52,9 +52,14 @@ class Crawler:
         self.browser_service = BrowserService(self.proxy_options)
         
         # Initialize and start daily dashboard scheduler
-        self.scheduler_service = SchedulerService()
-        self.scheduler_service.set_state_manager(self.state_manager)
-        self.scheduler_service.start_scheduler()
+        try:
+            self.scheduler_service = SchedulerService()
+            self.scheduler_service.set_state_manager(self.state_manager)
+            self.scheduler_service.start_scheduler()
+        except Exception as e:
+            print(f"⚠️  Scheduler service failed to initialize: {e}")
+            print("📱 Continuing without daily dashboard reports...")
+            self.scheduler_service = None
 
     def generate_filename(self, url: str) -> str:
         """Generate a unique filename for a URL."""
@@ -234,7 +239,7 @@ class Crawler:
             self.state_manager.record_page_crawl(url, crawl_time, page_type)
 
         except Exception as e:
-            #self.slack_service.send_error(str(e), url)
+            self.slack_service.send_error(str(e), url)
             print(f"\nError processing page {url}: {e}")
             
             # Record performance for errored page
@@ -320,7 +325,7 @@ class Crawler:
             print(f"\nCritical error: {e}")
         finally:
             # Cleanup services
-            if self.scheduler_service:
+            if hasattr(self, 'scheduler_service') and self.scheduler_service:
                 self.scheduler_service.stop_scheduler()
-            if self.browser_service:
+            if hasattr(self, 'browser_service') and self.browser_service:
                 self.browser_service.quit() 
