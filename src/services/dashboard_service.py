@@ -97,7 +97,7 @@ class DashboardService:
             'timestamp': datetime.now(self.aest_tz).strftime('%B %d, %Y - %I:%M %p AEST'),
             'progress': {
                 'completed': stats['completed_pages'],
-                'total': stats['total_pages_estimate'],
+                'total': stats['total_known_pages'],
                 'percentage': stats['progress_percent'],
                 'progress_bar': progress_bar,
                 'remaining': stats['remaining_pages']
@@ -119,8 +119,7 @@ class DashboardService:
             'today': stats['today_stats'],
             'milestone': milestone_info,
             'discovery': {
-                'total_found': stats['total_discovered'],
-                'vs_estimate': stats['total_discovered'] - stats['total_pages_estimate']
+                'total_found': stats['total_discovered']
             }
         }
     
@@ -169,7 +168,7 @@ class DashboardService:
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*📊 CRAWL PROGRESS*\n{progress['progress_bar']} {progress['percentage']}% ({progress['completed']:,}/{progress['total']:,} pages)"
+                "text": f"*📊 CRAWL PROGRESS*\n{progress['progress_bar']} {progress['percentage']}% ({progress['completed']:,}/{progress['total']:,} pages discovered)"
             }
         })
         
@@ -210,15 +209,12 @@ class DashboardService:
         cycle_text = f"*📈 CYCLE STATUS*\n"
         cycle_text += f"• Cycle: {cycle['type']} (Day {cycle['day']})\n"
         
-        # Show different remaining info based on cycle type
+        # Show queue-based info consistently
+        cycle_text += f"• Pages completed: {progress['completed']:,}\n"
+        cycle_text += f"• Pages in queue: {progress['remaining']:,}\n"
         if cycle['type'] == "First Discovery":
-            total_remaining = report_data['progress']['total'] - report_data['progress']['completed']
-            cycle_text += f"• Pages crawled: {progress['completed']:,}\n"
-            cycle_text += f"• Pages remaining: {total_remaining:,}\n"
-            cycle_text += f"• Current discovery queue: {progress['remaining']:,}\n"
+            cycle_text += f"• Total discovered: {progress['total']:,}\n"
         else:
-            cycle_text += f"• Pages crawled: {progress['completed']:,}\n"
-            cycle_text += f"• Pages remaining: {progress['remaining']:,}\n"
             cycle_text += f"• Est. time until next cycle: {timing['time_remaining']}\n"
             
         cycle_text += f"• Next milestone: {milestone['next_milestone']} ({milestone['progress_to_milestone']})"
@@ -237,36 +233,7 @@ class DashboardService:
             ]
         })
         
-        # Discovery insights (only show after first cycle OR if significant discovery)
-        discovery = report_data['discovery']
-        cycle = report_data['cycle']
-        
-        # Only show discovery insight if:
-        # 1. Not first cycle (we have complete data), OR
-        # 2. We've discovered significantly more than estimate
-        should_show_discovery = (
-            not cycle['type'] == "First Discovery" or 
-            discovery['total_found'] > discovery['vs_estimate'] + 1000  # Found 1000+ more than expected
-        )
-        
-        if should_show_discovery and discovery['vs_estimate'] != 0:
-            if discovery['vs_estimate'] > 0:
-                discovery_text = f"🔍 *DISCOVERY INSIGHT*\nFound {discovery['vs_estimate']:,} more pages than expected! Site is larger than initial estimate."
-            else:
-                # Only show "smaller" if we've completed discovery
-                if not cycle['type'] == "First Discovery":
-                    discovery_text = f"🔍 *DISCOVERY INSIGHT*\nSite appears smaller than estimated. Found {abs(discovery['vs_estimate']):,} fewer pages."
-                else:
-                    discovery_text = None  # Don't show during first discovery
-            
-            if discovery_text:
-                blocks.append({
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": discovery_text
-                    }
-                })
+        # Note: Discovery insights removed - using queue-based approach
         
         blocks.append({"type": "divider"})
         
