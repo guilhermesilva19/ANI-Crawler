@@ -3,6 +3,7 @@
 import os
 import time
 import hashlib
+from datetime import datetime
 from typing import Dict, Set, Optional, Tuple, List, Any
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
@@ -11,6 +12,7 @@ from src.services.browser_service import BrowserService
 from src.services.drive_service import DriveService
 from src.services.slack_service import SlackService
 from src.services.sheets_service import SheetsService
+from src.services.scheduler_service import SchedulerService
 from src.utils.content_comparison import compare_content, extract_links
 from src.utils.state_manager import StateManager
 from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID
@@ -46,6 +48,11 @@ class Crawler:
         
         # Initialize browser once for entire session
         self.browser_service = BrowserService(self.proxy_options)
+        
+        # Initialize and start daily dashboard scheduler
+        self.scheduler_service = SchedulerService()
+        self.scheduler_service.set_state_manager(self.state_manager)
+        self.scheduler_service.start_scheduler()
 
     def generate_filename(self, url: str) -> str:
         """Generate a unique filename for a URL."""
@@ -58,6 +65,9 @@ class Crawler:
 
     def process_page(self, url: str) -> None:
         """Process a single page: fetch, compare, and store changes."""
+        start_time = time.time()
+        page_type = "normal"
+        
         try:
             # Fetch and parse page
             soup, status_code = self.browser_service.get_page(url)
@@ -77,11 +87,21 @@ class Crawler:
                     self.sheets_service.log_deleted_page_alert(url, status_code, last_success)
                 
                 print(f"\nDeleted page detected: {url} (Status: {status_code})")
+                
+                # Record performance for deleted page
+                page_type = "failed"
+                crawl_time = time.time() - start_time
+                self.state_manager.record_page_crawl(url, crawl_time, page_type)
                 return  # Don't process further
             
             if not soup:
                 # Page failed to load but not classified as deleted yet
                 print(f"\nFailed to load page {url} (Status: {status_code})")
+                
+                # Record performance for failed page
+                page_type = "failed"
+                crawl_time = time.time() - start_time
+                self.state_manager.record_page_crawl(url, crawl_time, page_type)
                 return
 
             # Generate filenames
@@ -112,6 +132,7 @@ class Crawler:
             is_new_page = not old_file_id and not self.state_manager.was_visited(url)
             
             if is_new_page:
+                page_type = "new"
                 # Send new page notification using format_change_message
                 blocks = self.slack_service.format_change_message(
                     url,
@@ -165,6 +186,7 @@ class Crawler:
 
                 # If there are any changes, send notification
                 if any([added_text, deleted_text, changed_text]) or any(links_changes.values()):
+                    page_type = "changed"
                     blocks = self.slack_service.format_change_message(
                         url,
                         added_text,
@@ -204,10 +226,18 @@ class Crawler:
             # Update state
             self.state_manager.add_visited_url(url)
             self.state_manager.log_scanned_page(url)
+            
+            # Record performance metrics
+            crawl_time = time.time() - start_time
+            self.state_manager.record_page_crawl(url, crawl_time, page_type)
 
         except Exception as e:
             #self.slack_service.send_error(str(e), url)
             print(f"\nError processing page {url}: {e}")
+            
+            # Record performance for errored page
+            crawl_time = time.time() - start_time
+            self.state_manager.record_page_crawl(url, crawl_time, "failed")
 
     def format_change_blocks(self, changes: List[Dict[str, Any]], change_type: str) -> List[Dict[str, Any]]:
         """Format changes into blocks for notification."""
@@ -245,9 +275,17 @@ class Crawler:
     def run(self) -> None:
         """Main crawl loop."""
         try:
+            pages_processed_this_session = 0
+            
             while True:
                 url = self.state_manager.get_next_url()
                 if not url:
+                    # Check if we completed a full cycle
+                    if pages_processed_this_session > 0:
+                        print(f"\n🎉 Completed crawl cycle! Processed {pages_processed_this_session} pages this session.")
+                        self.state_manager.complete_cycle()
+                        pages_processed_this_session = 0
+                    
                     print("\nNo URLs remaining. Waiting for recrawl...")
                     time.sleep(300)  # Wait 5 minutes before checking again
                     continue
@@ -261,6 +299,14 @@ class Crawler:
 
                 print(f"\nCrawling: {url}")
                 self.process_page(url)
+                pages_processed_this_session += 1
+                
+                # Show progress every 10 pages
+                if pages_processed_this_session % 10 == 0:
+                    stats = self.state_manager.get_progress_stats()
+                    print(f"\n📊 Progress: {stats['completed_pages']}/{stats['total_pages_estimate']} ({stats['progress_percent']}%) - {stats['pages_per_hour']:.0f} pages/hour")
+                    if stats['eta_datetime']:
+                        print(f"⏰ ETA: {stats['eta_datetime'].strftime('%I:%M %p today' if stats['eta_datetime'].date() == datetime.now().date() else '%b %d at %I:%M %p')}")
                 
                 # Polite delay between requests
                 time.sleep(30)
@@ -271,5 +317,8 @@ class Crawler:
             self.slack_service.send_error(f"Critical crawler error: {str(e)}")
             print(f"\nCritical error: {e}")
         finally:
+            # Cleanup services
+            if self.scheduler_service:
+                self.scheduler_service.stop_scheduler()
             if self.browser_service:
                 self.browser_service.quit() 
