@@ -26,6 +26,8 @@ class Crawler:
     def __init__(self):
         self.state_manager = StateManager()
         self.drive_service = DriveService()
+        if not self.drive_service.service:
+            raise Exception("Failed to initialize Google Drive service - check credentials")
         self.slack_service = SlackService()
         
         # Initialize Google Sheets service for logging

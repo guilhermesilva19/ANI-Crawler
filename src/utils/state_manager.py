@@ -253,17 +253,10 @@ class StateManager:
         recent_crawls = self.performance_history[-20:] if self.performance_history else []
         avg_crawl_time = sum(p['crawl_time'] for p in recent_crawls) / len(recent_crawls) if recent_crawls else 15.0
         
-        # Calculate ETA
+        # Calculate ETA 
         if remaining_pages > 0 and avg_crawl_time > 0:
-            # During first discovery cycle, use more conservative estimate
-            if self.is_first_cycle:
-                # Use total estimate minus completed for more realistic ETA
-                total_remaining = self.total_pages_estimate - completed_pages
-                estimated_seconds_remaining = total_remaining * avg_crawl_time
-            else:
-                # After first cycle, use actual remaining queue
-                estimated_seconds_remaining = remaining_pages * avg_crawl_time
             
+            estimated_seconds_remaining = remaining_pages * avg_crawl_time
             eta_datetime = datetime.now() + timedelta(seconds=estimated_seconds_remaining)
         else:
             eta_datetime = None
