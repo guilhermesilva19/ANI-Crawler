@@ -64,7 +64,7 @@ class SchedulerService:
                     timezone=self.aest_tz
                 ),
                 id='daily_dashboard',
-                name='Daily Progress Dashboard',
+                name='Daily ANI-Crawler Progress Report',
                 replace_existing=True
             )
             

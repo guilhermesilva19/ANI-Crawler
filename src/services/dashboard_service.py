@@ -144,7 +144,7 @@ class DashboardService:
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": "🌅 Daily ANI-Crawler Progress Report"
+                "text": "📊 Daily ANI-Crawler Progress Report"
             }
         })
         
@@ -211,10 +211,13 @@ class DashboardService:
         # Show different remaining info based on cycle type
         if cycle['type'] == "First Discovery":
             total_remaining = report_data['progress']['total'] - report_data['progress']['completed']
-            cycle_text += f"• Estimated remaining: {total_remaining:,} pages\n"
-            cycle_text += f"• Current queue: {progress['remaining']:,} pages\n"
+            cycle_text += f"• Pages crawled: {progress['completed']:,}\n"
+            cycle_text += f"• Pages remaining: {total_remaining:,}\n"
+            cycle_text += f"• Current discovery queue: {progress['remaining']:,}\n"
         else:
-            cycle_text += f"• Queue remaining: {progress['remaining']:,} pages\n"
+            cycle_text += f"• Pages crawled: {progress['completed']:,}\n"
+            cycle_text += f"• Pages remaining: {progress['remaining']:,}\n"
+            cycle_text += f"• Est. time until next cycle: {timing['time_remaining']}\n"
             
         cycle_text += f"• Next milestone: {milestone['next_milestone']} ({milestone['progress_to_milestone']})"
         
@@ -271,7 +274,7 @@ class DashboardService:
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": "🤖 Automated daily report • Next report tomorrow at 10:00 AM AEST"
+                    "text": "🤖 Automated daily crawl progress • Next report tomorrow at 10:00 AM AEST • Monitoring education.gov.au for changes"
                 }
             ]
         })
