@@ -134,6 +134,23 @@ class BrowserService:
 
     def _get_safe_filename(self, url: str) -> str:
         """Generate a safe filename from URL."""
+        import hashlib
         parsed = urlparse(url)
-        filename = parsed.netloc + "_" + parsed.path.replace("/", "_").strip("_")
+        # Include path and query to avoid collisions
+        path_part = parsed.path.replace("/", "_").strip("_")
+        query_part = parsed.query.replace("&", "_").replace("=", "-") if parsed.query else ""
+        
+        # Create base filename
+        if path_part:
+            base_name = f"{parsed.netloc}_{path_part}"
+        else:
+            base_name = f"{parsed.netloc}_index"
+            
+        if query_part:
+            base_name += f"_{query_part}"
+        
+        # Add URL hash to ensure uniqueness
+        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+        filename = f"{base_name}_{url_hash}"
+        
         return filename[:100]  # Limit length for safety 

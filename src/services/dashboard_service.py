@@ -3,6 +3,7 @@
 import os
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
+import pytz
 from src.services.slack_service import SlackService
 from src.utils.state_manager import StateManager
 
@@ -14,10 +15,11 @@ class DashboardService:
     
     def __init__(self):
         self.slack_service = SlackService()
+        self.aest_tz = pytz.timezone('Australia/Sydney')
         
     def generate_progress_bar(self, percentage: float, width: int = 10) -> str:
         """Generate a visual progress bar."""
-        filled = int((percentage / 100) * width)
+        filled = round((percentage / 100) * width)
         empty = width - filled
         return "▓" * filled + "░" * empty
     
@@ -92,7 +94,7 @@ class DashboardService:
         performance_grade = self._get_performance_grade(stats['pages_per_hour'])
         
         return {
-            'timestamp': datetime.now().strftime('%B %d, %Y - %I:%M %p AEST'),
+            'timestamp': datetime.now(self.aest_tz).strftime('%B %d, %Y - %I:%M %p AEST'),
             'progress': {
                 'completed': stats['completed_pages'],
                 'total': stats['total_pages_estimate'],
