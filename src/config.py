@@ -44,6 +44,11 @@ CHROME_OPTIONS = {
     "headless": True,
     "disable_gpu": True,
     "no_sandbox": True,
+    "disable_dev_shm_usage": True,
+    "disable_extensions": True,
+    "disable_plugins": True,
+    "disable_images": True,
+    "disable_javascript": False,
     "window_size": (1920, 1080),
     "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/113.0.0.0 Safari/537.36"
 }

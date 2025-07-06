@@ -34,11 +34,27 @@ class BrowserService:
             chrome_options.add_argument("--disable-gpu")
         if CHROME_OPTIONS.get('no_sandbox'):
             chrome_options.add_argument("--no-sandbox")
+        if CHROME_OPTIONS.get('disable_dev_shm_usage'):
+            chrome_options.add_argument("--disable-dev-shm-usage")
+        if CHROME_OPTIONS.get('disable_extensions'):
+            chrome_options.add_argument("--disable-extensions")
+        if CHROME_OPTIONS.get('disable_plugins'):
+            chrome_options.add_argument("--disable-plugins")
+        if CHROME_OPTIONS.get('disable_images'):
+            chrome_options.add_argument("--disable-images")
         if CHROME_OPTIONS.get('window_size'):
             width, height = CHROME_OPTIONS['window_size']
             chrome_options.add_argument(f"--window-size={width},{height}")
         if CHROME_OPTIONS.get('user_agent'):
             chrome_options.add_argument(f"user-agent={CHROME_OPTIONS['user_agent']}")
+        
+        # Additional Docker-specific Chrome options
+        chrome_options.add_argument("--disable-background-timer-throttling")
+        chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+        chrome_options.add_argument("--disable-renderer-backgrounding")
+        chrome_options.add_argument("--disable-features=TranslateUI")
+        chrome_options.add_argument("--disable-ipc-flooding-protection")
+        chrome_options.add_argument("--remote-debugging-port=9222")
 
         try:
             # Configure selenium-wire with proxy if provided
