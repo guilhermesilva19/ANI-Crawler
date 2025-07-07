@@ -301,7 +301,7 @@ class Crawler:
                 url = url.rstrip("/")
                 
                 # Skip if URL should be excluded
-                if '#' in url or (CHECK_PREFIX and url.startswith(CHECK_PREFIX)):
+                if (CHECK_PREFIX and url.startswith(CHECK_PREFIX)):
                     continue
 
                 print(f"\nCrawling: {url}")

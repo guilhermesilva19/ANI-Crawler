@@ -78,9 +78,9 @@ def extract_links(page_url: str, soup: BeautifulSoup, check_prefix: Optional[str
         full_url = urljoin(page_url, href)
         parsed_url = urlparse(full_url)
         
-        # Skip fragment identifiers
+        # Remove fragment identifiers (everything after #) but keep the base URL
         if '#' in full_url:
-            continue
+            full_url = full_url.split('#')[0]
             
         # Skip external links
         if parsed_url.netloc != domain:
@@ -88,6 +88,10 @@ def extract_links(page_url: str, soup: BeautifulSoup, check_prefix: Optional[str
             
         # Skip specific prefixes if provided
         if check_prefix and full_url.startswith(check_prefix):
+            continue
+            
+        # Skip empty URLs after fragment removal
+        if not full_url.strip():
             continue
             
         links.add(full_url)
