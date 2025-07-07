@@ -38,7 +38,6 @@ EXCLUDE_PREFIXES = [
 ]
 
 
-
 # Browser Configuration
 CHROME_OPTIONS = {
     "headless": True,

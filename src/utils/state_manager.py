@@ -2,6 +2,7 @@ import pickle
 import os
 from datetime import datetime, timedelta
 from typing import Set, Dict, Optional, Tuple, List
+import pytz
 from src.config import DATA_FILE, NEXT_CRAWL_FILE, SCANNED_PAGES_FILE, TARGET_URLS
 
 __all__ = ['StateManager']
@@ -21,6 +22,9 @@ class StateManager:
         self.is_first_cycle: bool = True
         self.daily_stats: Dict[str, Dict] = {}  # {date: {pages_crawled, new_pages, changed_pages, failed_pages}}
         self.performance_history: List[Dict] = []  # Track crawling speed over time
+        
+        # Timezone for daily stats (must match dashboard report timezone)
+        self.aest_tz = pytz.timezone('Australia/Sydney')
         
         self.load_progress()
 
@@ -203,7 +207,8 @@ class StateManager:
     
     def record_page_crawl(self, url: str, crawl_time_seconds: float, page_type: str = "normal") -> None:
         """Record a page crawl for performance tracking."""
-        today = datetime.now().strftime("%Y-%m-%d")
+        # Use AEST timezone for daily stats to match dashboard report
+        today = datetime.now(self.aest_tz).strftime("%Y-%m-%d")
         
         # Initialize today's stats if needed
         if today not in self.daily_stats:
@@ -268,8 +273,8 @@ class StateManager:
         else:
             pages_per_hour = 0
         
-        # Get today's stats
-        today = datetime.now().strftime("%Y-%m-%d")
+        # Get today's stats using AEST timezone to match dashboard report
+        today = datetime.now(self.aest_tz).strftime("%Y-%m-%d")
         today_stats = self.daily_stats.get(today, {
             'pages_crawled': 0, 'new_pages': 0, 'changed_pages': 0, 'failed_pages': 0
         })
