@@ -304,11 +304,9 @@ class Crawler:
 
                 # Clean URL
                 url = url.rstrip("/")
-                
                 # Skip if URL should be excluded
                 if (CHECK_PREFIX and url.startswith(CHECK_PREFIX)):
                     continue
-
                 print(f"\nCrawling: {url}")
                 self.process_page(url)
                 pages_processed_this_session += 1
@@ -322,7 +320,6 @@ class Crawler:
                 
                 # Polite delay between requests
                 time.sleep(30)
-
         except KeyboardInterrupt:
             print("\nCrawling interrupted by user.")
         except Exception as e:
