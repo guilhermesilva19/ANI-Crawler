@@ -250,7 +250,6 @@ class Crawler:
             # cleanup the page-specific browser instance
             if 'page_browser' in locals():
                 page_browser.quit()
-                print(f"   🔄 Browser instance cleaned up for: {url}")
 
     def format_change_blocks(self, changes: List[Dict[str, Any]], change_type: str) -> List[Dict[str, Any]]:
         """Format changes into blocks for notification."""

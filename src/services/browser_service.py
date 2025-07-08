@@ -21,9 +21,7 @@ class BrowserService:
         """Initialize browser service with optional proxy settings."""
         self.driver = None
         self.proxy_options = proxy_options
-        print(f"   🌟 Creating fresh browser instance...")
         self.setup_driver()
-        print(f"   ✅ Fresh browser ready")
 
     def setup_driver(self) -> None:
         """Set up the Selenium WebDriver with appropriate options."""
