@@ -48,8 +48,6 @@ class Crawler:
             }
             print(f"\nProxy configured: {self.proxy_options['http']}")
         
-        # Initialize browser once for entire session
-        self.browser_service = BrowserService(self.proxy_options)
         
         # Initialize and start daily dashboard scheduler
         try:
@@ -75,9 +73,12 @@ class Crawler:
         start_time = time.time()
         page_type = "normal"
         
+        # Create fresh browser instance for this page to prevent degradation
+        page_browser = BrowserService(self.proxy_options)
+        
         try:
             # Fetch and parse page
-            soup, status_code = self.browser_service.get_page(url)
+            soup, status_code = page_browser.get_page(url)
             
             # Check for deleted page before processing
             is_deleted_page = self.state_manager.update_url_status(url, status_code)
@@ -116,7 +117,7 @@ class Crawler:
             old_file = filename + ".old"
 
             # Create folder structure in Drive
-            safe_filename = self.browser_service._get_safe_filename(url)
+            safe_filename = page_browser._get_safe_filename(url)
             folder_id, _ = self.drive_service.get_or_create_folder(safe_filename, TOP_PARENT_ID)
             html_folder_id, _ = self.drive_service.get_or_create_folder("HTML", folder_id)
             screenshot_folder_id, _ = self.drive_service.get_or_create_folder("SCREENSHOT", folder_id)
@@ -126,7 +127,7 @@ class Crawler:
                 f.write(soup.prettify())
 
             # Take screenshot
-            screenshot_path, _ = self.browser_service.save_screenshot(url)
+            screenshot_path, _ = page_browser.save_screenshot(url)
             if screenshot_path:
                 screenshot_url = self.drive_service.upload_file(screenshot_path, screenshot_folder_id)
                 os.remove(screenshot_path)
@@ -245,6 +246,11 @@ class Crawler:
             # Record performance for errored page
             crawl_time = time.time() - start_time
             self.state_manager.record_page_crawl(url, crawl_time, "failed")
+        finally:
+            # cleanup the page-specific browser instance
+            if 'page_browser' in locals():
+                page_browser.quit()
+                print(f"   🔄 Browser instance cleaned up for: {url}")
 
     def format_change_blocks(self, changes: List[Dict[str, Any]], change_type: str) -> List[Dict[str, Any]]:
         """Format changes into blocks for notification."""
@@ -327,5 +333,3 @@ class Crawler:
             # Cleanup services
             if hasattr(self, 'scheduler_service') and self.scheduler_service:
                 self.scheduler_service.stop_scheduler()
-            if hasattr(self, 'browser_service') and self.browser_service:
-                self.browser_service.quit() 
