@@ -59,3 +59,7 @@ webdriver-manager==4.0.2
 websocket-client==1.8.0
 wsproto==1.2.0
 zstandard==0.23.0
+
+# MongoDB support (optional - fallback to file-based if not available)
+pymongo
+motor

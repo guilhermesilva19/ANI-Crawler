@@ -17,7 +17,7 @@ def main():
         try:
             from src.services.slack_service import SlackService
             slack = SlackService()
-            slack.send_error(f"System startup failure: {str(e)}")
+            # slack.send_error(f"System startup failure: {str(e)}")
         except:
             pass  
         raise
