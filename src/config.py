@@ -56,3 +56,8 @@ CHROME_OPTIONS = {
 TARGET_URLS = [
     "https://www.education.gov.au/",
 ] 
+
+
+MONGODB_URI = os.getenv('MONGODB_URI')  # mongodb+srv://username:password@cluster.mongodb.net/
+SITE_ID = os.getenv('SITE_ID', 'education_gov_au')  # Unique identifier for this site
+SITE_NAME = os.getenv('SITE_NAME', 'Department of Education')  # Human-readable site name
