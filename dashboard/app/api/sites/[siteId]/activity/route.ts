@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getPerformanceHistory } from '../../../../../lib/mongodb';
+import { getPerformanceHistory } from '@/lib/mongodb';
 
 export async function GET(
   request: Request,
