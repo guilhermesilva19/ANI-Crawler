@@ -195,6 +195,24 @@ class Crawler:
                 # If there are any changes, send notification
                 if any([added_text, deleted_text, changed_text]) or any(links_changes.values()):
                     page_type = "changed"
+                    
+                    # Prepare detailed change information for storage
+                    change_details = {
+                        "added_text": [{"text": item.get("new_text", "")} for item in added_text] if added_text else [],
+                        "deleted_text": [{"text": item.get("new_text", "")} for item in deleted_text] if deleted_text else [],
+                        "changed_text": [{"text": item.get("new_text", "")} for item in changed_text] if changed_text else [],
+                        "added_links": list(links_changes.get('added_links', set())),
+                        "removed_links": list(links_changes.get('removed_links', set())),
+                        "added_pdfs": list(links_changes.get('added_pdfs', set())),
+                        "removed_pdfs": list(links_changes.get('removed_pdfs', set())),
+                        "screenshot_url": f"https://drive.google.com/drive/folders/{screenshot_folder_id}",
+                        "html_url": f"https://drive.google.com/drive/folders/{html_folder_id}",
+                        "change_summary": self._format_changes_for_sheets(added_text, deleted_text, changed_text, links_changes)
+                    }
+                    
+                    # Store detailed changes in MongoDB
+                    self.state_manager.store_page_changes(url, change_details)
+                    
                     blocks = self.slack_service.format_change_message(
                         url,
                         added_text,
@@ -237,7 +255,8 @@ class Crawler:
             
             # Record performance metrics
             crawl_time = time.time() - start_time
-            self.state_manager.record_page_crawl(url, crawl_time, page_type)
+            change_details_for_perf = change_details if 'change_details' in locals() else None
+            self.state_manager.record_page_crawl(url, crawl_time, page_type, change_details_for_perf)
 
         except Exception as e:
             self.slack_service.send_error(str(e), url)

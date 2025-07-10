@@ -258,6 +258,7 @@ class SlackService:
             if not blocks:  # Don't send empty messages
                 return None
                 
+            # response = None
             response = self.client.chat_postMessage(
                 channel=self.channel,
                 blocks=blocks,

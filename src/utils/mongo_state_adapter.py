@@ -374,7 +374,7 @@ class MongoStateAdapter:
             "total_known_urls": len(self.visited_urls) + len(self.remaining_urls)
         }
     
-    def record_page_crawl(self, url: str, crawl_time_seconds: float, page_type: str = "normal") -> None:
+    def record_page_crawl(self, url: str, crawl_time_seconds: float, page_type: str = "normal", change_details: Dict = None) -> None:
         """Record a page crawl with MongoDB sync."""
         # Use AEST timezone for daily stats
         today = datetime.now(self.aest_tz).strftime("%Y-%m-%d")
@@ -407,6 +407,11 @@ class MongoStateAdapter:
             'crawl_time': crawl_time_seconds,
             'page_type': page_type
         }
+        
+        # Add change details if provided
+        if change_details:
+            perf_entry['change_details'] = change_details
+        
         self.performance_history.append(perf_entry)
         
         # Keep only recent history to prevent memory bloat
@@ -423,6 +428,34 @@ class MongoStateAdapter:
             {"$set": {"stats": self.daily_stats[today]}},
             upsert=True
         )
+    
+    def store_page_changes(self, url: str, change_details: Dict) -> None:
+        """Store detailed page change information in MongoDB."""
+        try:
+            change_record = {
+                "site_id": self.site_id,
+                "url": url,
+                "timestamp": datetime.now(),
+                "change_details": change_details
+            }
+            
+            # Store in dedicated page_changes collection
+            self.db.page_changes.insert_one(change_record)
+            
+            # Also update URL state with last change info
+            self.db.url_states.update_one(
+                {"site_id": self.site_id, "url": url},
+                {
+                    "$set": {
+                        "last_change": change_record,
+                        "updated_at": datetime.now()
+                    }
+                }
+            )
+            
+            print(f"📝 Stored change details for {url}")
+        except Exception as e:
+            print(f"Error storing page changes: {e}")
     
     def get_progress_stats(self) -> Dict:
         """Get comprehensive progress statistics."""

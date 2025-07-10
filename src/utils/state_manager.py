@@ -205,7 +205,7 @@ class StateManager:
             "total_known_urls": len(self.visited_urls) + len(self.remaining_urls)
         }
     
-    def record_page_crawl(self, url: str, crawl_time_seconds: float, page_type: str = "normal") -> None:
+    def record_page_crawl(self, url: str, crawl_time_seconds: float, page_type: str = "normal", change_details: Dict = None) -> None:
         """Record a page crawl for performance tracking."""
         # Use AEST timezone for daily stats to match dashboard report
         today = datetime.now(self.aest_tz).strftime("%Y-%m-%d")
@@ -232,16 +232,43 @@ class StateManager:
             self.daily_stats[today]['failed_pages'] += 1
         
         # Update performance history (keep last 100 entries)
-        self.performance_history.append({
+        perf_entry = {
             'timestamp': datetime.now(),
             'url': url,
             'crawl_time': crawl_time_seconds,
             'page_type': page_type
-        })
+        }
+        
+        # Add change details if provided
+        if change_details:
+            perf_entry['change_details'] = change_details
+            
+        self.performance_history.append(perf_entry)
         
         # Keep only recent history to prevent memory bloat
         if len(self.performance_history) > 100:
             self.performance_history = self.performance_history[-100:]
+    
+    def store_page_changes(self, url: str, change_details: Dict) -> None:
+        """Store detailed page change information (file-based fallback)."""
+        # For file-based storage, we'll just log this information
+        # In production, this should use MongoDB
+        try:
+            import json
+            change_log_file = "page_changes.jsonl"
+            
+            change_record = {
+                "timestamp": datetime.now().isoformat(),
+                "url": url,
+                "change_details": change_details
+            }
+            
+            with open(change_log_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(change_record) + "\n")
+                
+            print(f"📝 Logged change details for {url} to {change_log_file}")
+        except Exception as e:
+            print(f"Error storing page changes: {e}")
     
     def get_progress_stats(self) -> Dict:
         """Get comprehensive progress statistics for dashboard."""
