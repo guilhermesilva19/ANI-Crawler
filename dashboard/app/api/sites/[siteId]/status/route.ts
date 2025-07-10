@@ -38,19 +38,26 @@ export async function GET(
       date: today 
     });
     
-    // Get recent performance to determine if crawler is ACTUALLY active
+    // Get recent performance to check for actual crawler activity
     const perfHistory = await getPerformanceHistory();
     const recentPerf = await perfHistory.find({ 
       site_id: siteId 
     })
     .sort({ timestamp: -1 })
-    .limit(10)
+    .limit(20)
     .toArray();
     
-    // Check for REAL activity within last 5 minutes
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-    const hasRecentActivity = recentPerf.length > 0 && 
-      new Date(recentPerf[0].timestamp) > fiveMinutesAgo;
+    // Check for actual recent activity within 5 minutes
+    const now = Date.now();
+    const fiveMinutesMs = 5 * 60 * 1000;
+    const actualRecentPerf = recentPerf.filter(perf => {
+      const perfTime = new Date(perf.timestamp).getTime();
+      const timeDiffMs = Math.abs(now - perfTime);
+      return timeDiffMs < fiveMinutesMs && perfTime <= now;
+    });
+    
+    // Only active if there's real activity within last 5 minutes
+    const hasRecentActivity = actualRecentPerf.length > 0;
     
     // Calculate REAL total discovered pages (not estimate!)
     const totalDiscoveredPages = visitedCount + remainingCount;
