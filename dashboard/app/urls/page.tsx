@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import SiteSelector from '@/components/SiteSelector';
-import URLBrowser from '@/components/URLBrowser';
+import SiteSelector from '../../components/SiteSelector';
+import URLBrowser from '../../components/URLBrowser';
 
 export default function URLsPage() {
   const [selectedSite, setSelectedSite] = useState<string | null>(null);

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getUrlStates } from '@/lib/mongodb';
+import { getUrlStates } from '../../../../../lib/mongodb';
 
 export async function GET(
   request: Request,
