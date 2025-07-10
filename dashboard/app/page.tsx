@@ -1,11 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import SiteSelector from '../components/SiteSelector';
-import StatusOverview from '../components/StatusOverview';
-import ActivityTimeline from '../components/ActivityTimeline';
-import PerformanceCharts from '../components/PerformanceCharts';
-import PageHealthOverview from '../components/PageHealthOverview';
+import SiteSelector from '@/components/SiteSelector';
+import StatusOverview from '@/components/StatusOverview';
+import ActivityTimeline from '@/components/ActivityTimeline';
+import PerformanceCharts from '@/components/PerformanceCharts';
+import PageHealthOverview from '@/components/PageHealthOverview';
 
 export default function Dashboard() {
   const [selectedSite, setSelectedSite] = useState<string | null>(null);

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getUrlStates, getDailyStats } from '../../../../../lib/mongodb';
+import { getUrlStates, getDailyStats } from '@/lib/mongodb';
 
 export async function GET(
   request: Request,
