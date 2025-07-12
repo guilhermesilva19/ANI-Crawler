@@ -112,6 +112,14 @@ class Crawler:
                 self.state_manager.record_page_crawl(url, crawl_time, page_type)
                 return
 
+            # Skip HTML processing for documents - only monitor availability
+            if '/download/' in url or url.lower().endswith(('.pdf', '.docx', '.xlsx', '.doc')):
+                print(f"\nDocument available: {url}")
+                self.state_manager.add_visited_url(url)
+                crawl_time = time.time() - start_time
+                self.state_manager.record_page_crawl(url, crawl_time, "document")
+                return
+
             # Generate filenames
             filename = self.generate_filename(url)
             old_file = filename + ".old"
