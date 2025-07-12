@@ -113,7 +113,7 @@ class Crawler:
                 return
 
             # Skip HTML processing for documents - only monitor availability
-            if '/download/' in url or url.lower().endswith(('.pdf', '.docx', '.xlsx', '.doc')):
+            if '/download/' in url or url.lower().endswith(('.pdf', '.docx', '.xlsx', '.doc', '.xls', '.ppt', '.zip', '.rar',".txt")):
                 print(f"\nDocument available: {url}")
                 self.state_manager.add_visited_url(url)
                 crawl_time = time.time() - start_time
