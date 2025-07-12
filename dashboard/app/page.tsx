@@ -19,13 +19,13 @@ export default function Dashboard() {
             <div className="flex items-center gap-6">
               <h1 className="text-xl font-bold text-white">ANI-Crawler Dashboard</h1>
               <nav className="flex items-center gap-4">
-                <a
+          <a
                   href="/"
                   className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
                 >
                   Dashboard
-                </a>
-                <a
+          </a>
+          <a
                   href="/urls"
                   className="px-3 py-1 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 transition-colors text-sm"
                 >

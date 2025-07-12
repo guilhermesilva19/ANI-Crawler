@@ -24,6 +24,7 @@ interface StatusData {
     changed_pages: number;
     errors: number;
   };
+  deletedCount: number;
 }
 
 interface StatusOverviewProps {
@@ -164,10 +165,10 @@ export default function StatusOverview({ siteId }: StatusOverviewProps) {
         <div className="bg-gray-900 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-2">
             <Clock className="w-4 h-4 text-blue-400" />
-            <span className="text-gray-400 text-sm">Avg Time</span>
+            <span className="text-gray-400 text-sm">Avg Interval</span>
           </div>
           <div className="text-2xl font-mono text-white">{status.avgCrawlTime}s</div>
-          <div className="text-sm text-gray-400">per page</div>
+          <div className="text-sm text-gray-400">between URLs</div>
         </div>
 
         {/* ETA */}

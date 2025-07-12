@@ -475,7 +475,9 @@ class MongoStateAdapter:
         
         # Calculate ETA 
         if remaining_pages > 0 and avg_crawl_time > 0:
-            estimated_seconds_remaining = remaining_pages * avg_crawl_time
+            # Use total pages for maintenance cycles, remaining pages for discovery
+            pages_for_eta = total_known_pages if not self.is_first_cycle else remaining_pages
+            estimated_seconds_remaining = pages_for_eta * avg_crawl_time
             eta_datetime = datetime.now() + timedelta(seconds=estimated_seconds_remaining)
         else:
             eta_datetime = None
