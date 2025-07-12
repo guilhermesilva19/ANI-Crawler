@@ -41,10 +41,36 @@ export async function GET(
     
     const speedTrend = Object.entries(hourlyGroups).map(([hour, perfs]) => {
       let avgSpeed = 0;
-      if (perfs.length > 0) {
-        const totalCrawlTime = perfs.reduce((sum: number, p: any) => sum + (p.crawl_time || 0), 0);
-        const avgCrawlTime = totalCrawlTime / perfs.length;
-        avgSpeed = avgCrawlTime > 0 ? Math.round(3600 / avgCrawlTime) : 0;
+      if (perfs.length >= 2) {
+        // Sort by timestamp to ensure chronological order
+        const sortedPerfs = perfs.sort((a: any, b: any) => 
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        
+        // Calculate time differences between consecutive URLs
+        let totalTimeBetweenUrls = 0;
+        let validIntervals = 0;
+        
+        for (let i = 1; i < sortedPerfs.length; i++) {
+          const currentTime = new Date(sortedPerfs[i].timestamp).getTime();
+          const previousTime = new Date(sortedPerfs[i-1].timestamp).getTime();
+          const timeDiffSeconds = (currentTime - previousTime) / 1000;
+          
+          // Only count reasonable intervals (between 10 seconds and 10 minutes)
+          if (timeDiffSeconds >= 10 && timeDiffSeconds <= 600) {
+            totalTimeBetweenUrls += timeDiffSeconds;
+            validIntervals++;
+          }
+        }
+        
+        // Calculate average time between URLs and real speed
+        const avgTimeBetweenUrls = validIntervals > 0 ? totalTimeBetweenUrls / validIntervals : 0;
+        avgSpeed = avgTimeBetweenUrls > 0 ? Math.round(3600 / avgTimeBetweenUrls) : 0;
+      } else if (perfs.length === 1) {
+        // Fallback for single record: estimate based on processing time + typical delay
+        const crawlTime = perfs[0].crawl_time || 30;
+        const estimatedTotalTime = crawlTime + 30; // Add 30s delay
+        avgSpeed = Math.round(3600 / estimatedTotalTime);
       }
       return {
         time: new Date(hour + ':00:00Z').getTime(),

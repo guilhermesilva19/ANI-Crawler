@@ -30,6 +30,13 @@ export async function GET(
       status: 'remaining' 
     });
     
+    // Get actual deleted pages count (same logic as URL Explorer)
+    const deletedCount = await urlStates.countDocuments({ 
+      site_id: siteId, 
+      'status_info.status': { $in: [404, 410] },
+      'status_info.error_count': { $gte: 2 }
+    });
+    
     // Get today's stats
     const today = new Date().toISOString().split('T')[0];
     const dailyStats = await getDailyStats();
@@ -64,11 +71,38 @@ export async function GET(
     
     // Calculate current speed - avoid NaN
     let currentSpeed = 0;
-    let avgCrawlTimeSeconds = 0;
-    if (recentPerf.length > 0) {
-      const totalCrawlTime = recentPerf.reduce((sum: number, p: any) => sum + (p.crawl_time || 0), 0);
-      avgCrawlTimeSeconds = totalCrawlTime / recentPerf.length;
-      currentSpeed = avgCrawlTimeSeconds > 0 ? Math.round(3600 / avgCrawlTimeSeconds) : 0;
+    let avgTimeBetweenUrls = 0;
+    
+    if (recentPerf.length >= 2) {
+      // Sort by timestamp to ensure chronological order
+      const sortedPerf = recentPerf.sort((a: any, b: any) => 
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
+      
+      // Calculate time differences between consecutive URLs
+      let totalTimeBetweenUrls = 0;
+      let validIntervals = 0;
+      
+      for (let i = 1; i < sortedPerf.length; i++) {
+        const currentTime = new Date(sortedPerf[i].timestamp).getTime();
+        const previousTime = new Date(sortedPerf[i-1].timestamp).getTime();
+        const timeDiffSeconds = (currentTime - previousTime) / 1000;
+        
+        // Only count reasonable intervals (between 10 seconds and 10 minutes)
+        if (timeDiffSeconds >= 10 && timeDiffSeconds <= 600) {
+          totalTimeBetweenUrls += timeDiffSeconds;
+          validIntervals++;
+        }
+      }
+      
+      // Calculate average time between URLs and real speed
+      avgTimeBetweenUrls = validIntervals > 0 ? totalTimeBetweenUrls / validIntervals : 0;
+      currentSpeed = avgTimeBetweenUrls > 0 ? Math.round(3600 / avgTimeBetweenUrls) : 0;
+    } else if (recentPerf.length === 1) {
+      // Fallback for single record: estimate based on processing time + typical delay
+      const crawlTime = recentPerf[0].crawl_time || 30;
+      const estimatedTotalTime = crawlTime + 30; // Add 30s delay
+      currentSpeed = Math.round(3600 / estimatedTotalTime);
     }
     
     // Calculate progress using DISCOVERED pages, not estimates
@@ -97,7 +131,7 @@ export async function GET(
       remainingPages: remainingCount,
       progressPercent,
       currentSpeed,
-      avgCrawlTime: avgCrawlTimeSeconds > 0 ? avgCrawlTimeSeconds.toFixed(1) : '0.0',
+      avgCrawlTime: avgTimeBetweenUrls > 0 ? avgTimeBetweenUrls.toFixed(1) : '0.0',
       etaHours,
       cycleInfo: {
         number: siteState.current_cycle || 1,
@@ -112,7 +146,8 @@ export async function GET(
         new_pages: 0,
         changed_pages: 0,
         errors: 0
-      }
+      },
+      deletedCount
     };
     
     return NextResponse.json({ status });

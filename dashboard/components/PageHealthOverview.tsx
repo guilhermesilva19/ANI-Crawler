@@ -55,7 +55,7 @@ export default function PageHealthOverview({ siteId }: PageHealthOverviewProps) 
       }
       
       const todayStats = statusData.status.todayStats;
-      const deletedPagesCount = todayStats.failed_pages;
+      const deletedPagesCount = statusData.status.deletedCount;  // Use actual deleted count
       const healthScore = Math.max(0, 100 - (metricsData.metrics?.errorRate || 0));
       
       setHealthData({
