@@ -90,16 +90,19 @@ class BrowserService:
             self.driver.get(url)
             time.sleep(10)  # Wait for page load
             
-            # Get HTTP status from selenium-wire
+            # Get final HTTP status from selenium-wire (after redirects)
             status_code = 200  # Default to success
-            for request in self.driver.requests:
-                if request.url == url and request.response:
+            final_url = self.driver.current_url
+            
+            # Find the final request that matches the current URL
+            for request in reversed(self.driver.requests):  # Check most recent first
+                if request.response and request.url == final_url:
                     status_code = request.response.status_code
                     break
             
             # Check if page loaded successfully
             if status_code >= 400:
-                print(f"\nHTTP {status_code} for {url}")
+                print(f"\nHTTP {status_code} for {final_url}")
                 return None, status_code
                 
             soup = BeautifulSoup(self.driver.page_source, 'html.parser')

@@ -26,6 +26,7 @@ interface Filters {
   search: string;
   sortBy: string;
   sortOrder: string;
+  pageType: string;
 }
 
 interface StatusCounts {
@@ -56,7 +57,8 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
     status: 'all',
     search: '',
     sortBy: 'last_crawled',
-    sortOrder: 'desc'
+    sortOrder: 'desc',
+    pageType: 'all'
   });
 
   const [searchInput, setSearchInput] = useState('');
@@ -164,12 +166,25 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
     setChanges([]);
   };
 
+  // Helper function to determine if URL is a document
+  const isDocumentUrl = (url: string) => {
+    return url.includes('/download/') || url.toLowerCase().match(/\.(pdf|docx|xlsx|doc|xls|ppt|zip|rar|txt)$/);
+  };
+
+  // Filter URLs by page type
+  const filteredUrls = urls.filter(url => {
+    if (filters.pageType === 'all') return true;
+    if (filters.pageType === 'document') return isDocumentUrl(url.url);
+    if (filters.pageType === 'normal') return !isDocumentUrl(url.url);
+    return true;
+  });
+
   return (
     <div className="bg-gray-900 rounded-lg border border-gray-700 p-6">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-semibold text-white">URL Browser</h2>
         <div className="text-sm text-gray-400 font-mono">
-          {totalCount.toLocaleString()} URLs
+          {filteredUrls.length.toLocaleString()} / {totalCount.toLocaleString()} URLs
         </div>
       </div>
 
@@ -267,6 +282,41 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
           </button>
         </div>
 
+        {/* Page Type Filter */}
+        <div className="flex flex-wrap gap-2 border-t border-gray-700 pt-3">
+          <span className="text-xs text-gray-400 self-center mr-2">Type:</span>
+          <button
+            onClick={() => handleFilterChange('pageType', 'all')}
+            className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+              filters.pageType === 'all'
+                ? 'bg-purple-600 text-white border-purple-600'
+                : 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700'
+            }`}
+          >
+            All Pages
+          </button>
+          <button
+            onClick={() => handleFilterChange('pageType', 'normal')}
+            className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+              filters.pageType === 'normal'
+                ? 'bg-purple-600 text-white border-purple-600'
+                : 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700'
+            }`}
+          >
+            HTML Pages
+          </button>
+          <button
+            onClick={() => handleFilterChange('pageType', 'document')}
+            className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+              filters.pageType === 'document'
+                ? 'bg-purple-600 text-white border-purple-600'
+                : 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700'
+            }`}
+          >
+            Documents
+          </button>
+        </div>
+
         {/* Advanced Filters */}
         {showFilters && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-800 rounded-lg border border-gray-600">
@@ -305,7 +355,7 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
       ) : (
         <>
           <div className="space-y-2 mb-6">
-            {urls.map((url) => (
+            {filteredUrls.map((url) => (
               <div
                 key={url.id}
                 className="p-4 bg-gray-800 rounded-lg border border-gray-700 hover:bg-gray-750 transition-colors"
@@ -364,6 +414,13 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
               </div>
             ))}
           </div>
+
+          {/* No results message */}
+          {filteredUrls.length === 0 && urls.length > 0 && (
+            <div className="text-center py-8">
+              <div className="text-gray-400">No {filters.pageType === 'document' ? 'documents' : filters.pageType === 'normal' ? 'HTML pages' : 'URLs'} match your filters</div>
+            </div>
+          )}
 
           {/* Pagination */}
           {totalPages > 1 && (
