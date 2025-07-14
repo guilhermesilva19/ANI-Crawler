@@ -120,22 +120,36 @@ class Crawler:
                 self.state_manager.record_page_crawl(url, crawl_time, "document")
                 return
 
-            # Generate filenames
+            # Generate filenames and prepare safe filename for Drive
             filename = self.generate_filename(url)
             old_file = filename + ".old"
-
-            # Create folder structure in Drive
             safe_filename = page_browser._get_safe_filename(url)
-            folder_id, _ = self.drive_service.get_or_create_folder(safe_filename, TOP_PARENT_ID)
-            html_folder_id, _ = self.drive_service.get_or_create_folder("HTML", folder_id)
-            screenshot_folder_id, _ = self.drive_service.get_or_create_folder("SCREENSHOT", folder_id)
+            
+            # Track created folders for rollback if needed
+            created_folder_ids = []
 
-            # Save current version
+            # PHASE 1: Complete all risky local operations BEFORE creating Drive folders
+            # Save current version locally first
             with open(filename, "w", encoding="utf-8") as f:
                 f.write(soup.prettify())
 
-            # Take screenshot
+            # Take screenshot locally (most likely to fail)
             screenshot_path, _ = page_browser.save_screenshot(url)
+
+            # PHASE 2: Only create Drive folders after local operations succeed
+            folder_id, folder_status = self.drive_service.get_or_create_folder(safe_filename, TOP_PARENT_ID)
+            if folder_status == 'new':
+                created_folder_ids.append(folder_id)
+                
+            html_folder_id, html_status = self.drive_service.get_or_create_folder("HTML", folder_id)
+            if html_status == 'new':
+                created_folder_ids.append(html_folder_id)
+                
+            screenshot_folder_id, screenshot_status = self.drive_service.get_or_create_folder("SCREENSHOT", folder_id)
+            if screenshot_status == 'new':
+                created_folder_ids.append(screenshot_folder_id)
+
+            # PHASE 3: Upload files to Drive (now that folders exist and local files are ready)
             if screenshot_path:
                 screenshot_url = self.drive_service.upload_file(screenshot_path, screenshot_folder_id)
                 os.remove(screenshot_path)
@@ -267,6 +281,15 @@ class Crawler:
             self.state_manager.record_page_crawl(url, crawl_time, page_type, change_details_for_perf)
 
         except Exception as e:
+            # Rollback any newly created folders to prevent orphans
+            if 'created_folder_ids' in locals():
+                for folder_id in created_folder_ids:
+                    try:
+                        self.drive_service.delete_file(folder_id)
+                        print(f"🗑️  Cleaned up orphaned folder: {folder_id}")
+                    except Exception as cleanup_error:
+                        print(f"⚠️  Could not clean up folder {folder_id}: {cleanup_error}")
+            
             self.slack_service.send_error(str(e), url)
             print(f"\nError processing page {url}: {e}")
             
