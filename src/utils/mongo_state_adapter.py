@@ -534,6 +534,66 @@ class MongoStateAdapter:
             self.total_pages_estimate = new_estimate
             self.save_progress()
     
+    def rescue_stuck_urls(self, stuck_minutes: int = 60) -> int:
+        """
+        Rescue URLs that have been stuck in 'in_progress' status for too long.
+        
+        Args:
+            stuck_minutes: How many minutes before considering a URL stuck (default: 60)
+            
+        Returns:
+            Number of URLs rescued
+        """
+        try:
+            cutoff_time = datetime.now() - timedelta(minutes=stuck_minutes)
+            
+            # Find URLs stuck in progress for more than the cutoff time
+            stuck_docs = self.db.url_states.find({
+                "site_id": self.site_id,
+                "status": "in_progress",
+                "updated_at": {"$lt": cutoff_time}
+            })
+            
+            rescued_count = 0
+            rescued_urls = []
+            
+            for doc in stuck_docs:
+                url = doc['url']
+                rescued_urls.append(url)
+                
+                # Move back to remaining queue
+                self.remaining_urls.add(url)
+                
+                # Update database status
+                self.db.url_states.update_one(
+                    {"site_id": self.site_id, "url": url},
+                    {
+                        "$set": {
+                            "status": "remaining",
+                            "updated_at": datetime.now(),
+                            "rescue_count": doc.get('rescue_count', 0) + 1,
+                            "last_rescued": datetime.now()
+                        }
+                    }
+                )
+                
+                rescued_count += 1
+            
+            if rescued_count > 0:
+                print(f"🚑 Rescued {rescued_count} stuck URLs (stuck > {stuck_minutes} min)")
+                for url in rescued_urls[:3]:  # Show first 3 as examples
+                    print(f"   • {url}")
+                if len(rescued_urls) > 3:
+                    print(f"   • ... and {len(rescued_urls) - 3} more")
+                    
+                self.save_progress()
+            
+            return rescued_count
+            
+        except Exception as e:
+            print(f"❌ Error rescuing stuck URLs: {e}")
+            return 0
+
     def _initialize_progress_tracking(self) -> None:
         """Initialize progress tracking fields for backward compatibility."""
         if not hasattr(self, 'cycle_start_time') or self.cycle_start_time is None:
