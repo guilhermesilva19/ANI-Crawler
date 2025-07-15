@@ -478,14 +478,16 @@ class MongoStateAdapter:
             # Primary method: Use interval-based throughput calculation
             interval_based_throughput = self._calculate_throughput_from_intervals()
             
+            # Determine pages count for ETA: maintenance cycles need to process all known pages
+            pages_for_eta_calculation = total_known_pages if not self.is_first_cycle else remaining_pages
+            
             if interval_based_throughput > 0:
                 # Calculate completion time based on actual processing intervals
-                estimated_completion_hours = remaining_pages / interval_based_throughput
+                estimated_completion_hours = pages_for_eta_calculation / interval_based_throughput
                 eta_datetime = datetime.now() + timedelta(hours=estimated_completion_hours)
             else:
                 # Fallback method: Use individual page processing times
-                # Note: Uses remaining pages count for accurate estimation
-                estimated_completion_seconds = remaining_pages * average_processing_time
+                estimated_completion_seconds = pages_for_eta_calculation * average_processing_time
                 eta_datetime = datetime.now() + timedelta(seconds=estimated_completion_seconds)
         else:
             eta_datetime = None
