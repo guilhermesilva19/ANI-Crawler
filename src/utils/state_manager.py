@@ -282,22 +282,34 @@ class StateManager:
         else:
             progress_percent = 0.0
         
-        # Calculate average crawl time from recent performance
-        recent_crawls = self.performance_history[-20:] if self.performance_history else []
-        avg_crawl_time = sum(p['crawl_time'] for p in recent_crawls) / len(recent_crawls) if recent_crawls else 15.0
+        # Calculate average processing time per page for backward compatibility
+        recent_performance_entries = self.performance_history[-20:] if self.performance_history else []
+        average_processing_time = sum(entry['crawl_time'] for entry in recent_performance_entries) / len(recent_performance_entries) if recent_performance_entries else 15.0
         
-        # Calculate ETA 
-        if remaining_pages > 0 and avg_crawl_time > 0:
-            # Use total pages for maintenance cycles, remaining pages for discovery
-            pages_for_eta = total_known_pages if not self.is_first_cycle else remaining_pages
-            estimated_seconds_remaining = pages_for_eta * avg_crawl_time
-            eta_datetime = datetime.now() + timedelta(seconds=estimated_seconds_remaining)
+        # Calculate estimated time to completion using interval-based throughput analysis
+        if remaining_pages > 0:
+            # Primary method: Use interval-based throughput calculation
+            interval_based_throughput = self._calculate_throughput_from_intervals()
+            
+            if interval_based_throughput > 0:
+                # Calculate completion time based on actual processing intervals
+                estimated_completion_hours = remaining_pages / interval_based_throughput
+                eta_datetime = datetime.now() + timedelta(hours=estimated_completion_hours)
+            else:
+                # Fallback method: Use individual page processing times
+                # Note: Uses remaining pages count for accurate estimation
+                estimated_completion_seconds = remaining_pages * average_processing_time
+                eta_datetime = datetime.now() + timedelta(seconds=estimated_completion_seconds)
         else:
             eta_datetime = None
         
-        # Calculate pages per hour
-        if avg_crawl_time > 0:
-            pages_per_hour = 3600 / avg_crawl_time
+        # Calculate current processing rate using interval analysis when available
+        interval_based_throughput = self._calculate_throughput_from_intervals()
+        if interval_based_throughput > 0:
+            pages_per_hour = interval_based_throughput
+        elif average_processing_time > 0:
+            # Fallback: Use processing time only (less accurate)
+            pages_per_hour = 3600 / average_processing_time
         else:
             pages_per_hour = 0
         
@@ -341,10 +353,51 @@ class StateManager:
         print(f"\n🔄 Cycle {self.current_cycle - 1} completed. Starting cycle {self.current_cycle}")
     
     def update_total_pages_estimate(self, new_estimate: int) -> None:
-        """Update the total pages estimate (e.g., from fresh sitemap analysis)."""
+        """Update the total pages estimate."""
         if new_estimate != self.total_pages_estimate:
-            print(f"\n📊 Updating total pages estimate: {self.total_pages_estimate} → {new_estimate}")
+            print(f"📊 Updating total pages estimate: {self.total_pages_estimate} → {new_estimate}")
             self.total_pages_estimate = new_estimate
             self.save_progress()
+    
+    def _calculate_throughput_from_intervals(self) -> float:
+        """
+        Calculate actual crawling throughput based on time intervals between page completions.
+        
+        This method analyzes the time elapsed between consecutive page crawls to determine
+        the true processing rate, including system delays and processing overhead.
+        
+        Returns:
+            float: Pages processed per hour based on actual interval analysis.
+                   Returns 0.0 if insufficient data is available.
+        """
+        if len(self.performance_history) < 2:
+            return 0.0
+        
+        # Extract recent performance entries for analysis
+        recent_performance_data = self.performance_history[-20:]
+        chronologically_sorted_data = sorted(recent_performance_data, key=lambda entry: entry['timestamp'])
+        
+        total_interval_duration = 0.0
+        validated_interval_count = 0
+        
+        # Analyze time intervals between consecutive page completions
+        for current_index in range(1, len(chronologically_sorted_data)):
+            current_completion_time = chronologically_sorted_data[current_index]['timestamp']
+            previous_completion_time = chronologically_sorted_data[current_index - 1]['timestamp']
+            interval_duration_seconds = (current_completion_time - previous_completion_time).total_seconds()
+            
+            # Validate interval duration to exclude outliers and system interruptions
+            # Acceptable range: 10 seconds to 10 minutes per page
+            if 10 <= interval_duration_seconds <= 600:
+                total_interval_duration += interval_duration_seconds
+                validated_interval_count += 1
+        
+        # Calculate throughput rate
+        if validated_interval_count > 0:
+            average_interval_duration = total_interval_duration / validated_interval_count
+            pages_processed_per_hour = 3600 / average_interval_duration
+            return pages_processed_per_hour
+        
+        return 0.0
     
  
