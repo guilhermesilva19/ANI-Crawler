@@ -368,6 +368,10 @@ class Crawler:
                     if stats['eta_datetime']:
                         print(f"⏰ ETA: {stats['eta_datetime'].strftime('%I:%M %p today' if stats['eta_datetime'].date() == datetime.now().date() else '%b %d at %I:%M %p')}")
                 
+                # Rescue stuck URLs every 50 pages (roughly every 25-30 minutes)
+                if pages_processed_this_session % 50 == 0:
+                    self.state_manager.rescue_stuck_urls(stuck_minutes=60)
+                
                 # Polite delay between requests
                 time.sleep(30)
         except KeyboardInterrupt:
