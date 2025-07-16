@@ -62,8 +62,11 @@ export async function GET(
     
     // Calculate UTC boundaries for "last 7 days" (7-day rolling window)
     const utcNow = new Date();
-    const utc7DaysAgo = new Date(utcNow.getTime() - (7 * 24 * 60 * 60 * 1000)); // 7 days ago
+    const utc7DaysAgo = new Date(utcNow);
+    utc7DaysAgo.setDate(utc7DaysAgo.getDate() - 6); // 6 days ago + today = 7 days
+    utc7DaysAgo.setUTCHours(0, 0, 0, 0);
     const utcEndOfToday = new Date(utcNow);
+    utcEndOfToday.setUTCHours(23, 59, 59, 999);
     
     // Get 7-day date range in AEST format for daily_stats collection queries
     // Daily stats uses AEST date strings, calculate the date range
