@@ -582,7 +582,7 @@ class MongoStateAdapter:
             'total_known_pages': total_known_pages,
             'remaining_pages': remaining_pages,
             'progress_percent': round(progress_percent, 1),
-            'avg_crawl_time_seconds': round(avg_crawl_time, 1),
+            'avg_crawl_time_seconds': round(average_processing_time, 1),
             'pages_per_hour': round(pages_per_hour, 0),
             'eta_datetime': eta_datetime,
             'cycle_number': self.current_cycle,
