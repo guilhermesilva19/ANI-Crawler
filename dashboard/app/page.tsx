@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import SiteSelector from '@/components/SiteSelector';
-import StatusOverview from '@/components/StatusOverview';
-import ActivityTimeline from '@/components/ActivityTimeline';
-import PerformanceCharts from '@/components/PerformanceCharts';
-import PageHealthOverview from '@/components/PageHealthOverview';
+import SiteStatus from '@/components/SiteStatus';
+import DailyStats from '@/components/DailyStats';
+import WeeklyStats from '@/components/WeeklyStats';
+
 
 export default function Dashboard() {
   const [selectedSite, setSelectedSite] = useState<string | null>(null);
@@ -48,23 +48,13 @@ export default function Dashboard() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {selectedSite ? (
           <div className="space-y-8">
-            {/* Status Overview */}
-            <StatusOverview siteId={selectedSite} />
+            {/* Simple Site Status - All Essential Info */}
+            <SiteStatus siteId={selectedSite} />
             
-            {/* Page Health Overview */}
-            <PageHealthOverview siteId={selectedSite} />
-            
-            {/* Two Column Layout */}
+            {/* Daily and Weekly Stats */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Left Column - Performance Charts */}
-              <div className="space-y-6">
-                <PerformanceCharts siteId={selectedSite} />
-              </div>
-              
-              {/* Right Column - Activity Timeline */}
-              <div>
-                <ActivityTimeline siteId={selectedSite} />
-              </div>
+              <DailyStats siteId={selectedSite} />
+              <WeeklyStats siteId={selectedSite} />
             </div>
           </div>
         ) : (

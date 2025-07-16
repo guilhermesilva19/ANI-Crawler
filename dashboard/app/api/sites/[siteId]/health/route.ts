@@ -8,25 +8,28 @@ export async function GET(
   try {
     const { siteId } = await params;
     
+    // Convert site ID format (dashboard uses hyphens, database uses underscores)
+    const dbSiteId = siteId.replace(/-/g, '_');
+    
     // Get URL states to find deleted/failed pages
     const urlStates = await getUrlStates();
     
     // Find pages with error status codes (potential deleted pages)
     const deletedPages = await urlStates.find({
-      site_id: siteId,
+      site_id: dbSiteId,
       'status_info.status': { $in: [404, 410] }, // Not Found, Gone
       'status_info.error_count': { $gte: 2 }      // Multiple failures
     }).toArray();
     
     // Find pages with any errors
     const failedPages = await urlStates.find({
-      site_id: siteId,
+      site_id: dbSiteId,
       'status_info.status': { $gte: 400 }
     }).toArray();
     
     // Get recent page changes
     const changedPages = await urlStates.find({
-      site_id: siteId,
+      site_id: dbSiteId,
       'status_info.last_success': { $exists: true },
       'status_info.status': { $lt: 400 }
     })
@@ -40,14 +43,14 @@ export async function GET(
     
     const dailyStats = await getDailyStats();
     const weeklyStats = await dailyStats.find({
-      site_id: siteId,
+      site_id: dbSiteId,
       date: { $gte: sevenDaysAgo.toISOString().split('T')[0] }
     })
     .sort({ date: 1 })
     .toArray();
     
     // Calculate health metrics
-    const totalPages = await urlStates.countDocuments({ site_id: siteId });
+    const totalPages = await urlStates.countDocuments({ site_id: dbSiteId });
     const healthyPages = totalPages - failedPages.length;
     const healthScore = totalPages > 0 ? (healthyPages / totalPages) * 100 : 100;
     

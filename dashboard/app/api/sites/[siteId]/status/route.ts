@@ -8,9 +8,12 @@ export async function GET(
   try {
     const { siteId } = await params;
     
+    // Convert site ID format (dashboard uses hyphens, database uses underscores)
+    const dbSiteId = siteId.replace(/-/g, '_');
+    
     // Get site state
     const siteStates = await getSiteStates();
-    const siteState = await siteStates.findOne({ site_id: siteId });
+    const siteState = await siteStates.findOne({ site_id: dbSiteId });
     
     if (!siteState) {
       return NextResponse.json(
@@ -22,33 +25,34 @@ export async function GET(
     // Get URL counts
     const urlStates = await getUrlStates();
     const visitedCount = await urlStates.countDocuments({ 
-      site_id: siteId, 
+      site_id: dbSiteId, 
       status: 'visited' 
     });
     const remainingCount = await urlStates.countDocuments({ 
-      site_id: siteId, 
+      site_id: dbSiteId, 
       status: 'remaining' 
     });
     
     // Get actual deleted pages count (same logic as URL Explorer)
     const deletedCount = await urlStates.countDocuments({ 
-      site_id: siteId, 
+      site_id: dbSiteId, 
       'status_info.status': { $in: [404, 410] },
       'status_info.error_count': { $gte: 2 }
     });
     
-    // Get today's stats
+    // Get today's stats - ONLY for the selected site
     const today = new Date().toISOString().split('T')[0];
     const dailyStats = await getDailyStats();
+    
     const todayStats = await dailyStats.findOne({ 
-      site_id: siteId, 
+      site_id: dbSiteId, 
       date: today 
     });
     
     // Get recent performance to check for actual crawler activity
     const perfHistory = await getPerformanceHistory();
     const recentPerf = await perfHistory.find({ 
-      site_id: siteId 
+      site_id: dbSiteId 
     })
     .sort({ timestamp: -1 })
     .limit(20)

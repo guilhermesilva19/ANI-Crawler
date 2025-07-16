@@ -67,6 +67,7 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
   // Change history modal state
   const [selectedUrl, setSelectedUrl] = useState<URL | null>(null);
   const [changes, setChanges] = useState<any[]>([]);
+  const [driveUrls, setDriveUrls] = useState<{screenshot_url: string, html_url: string} | null>(null);
   const [loadingChanges, setLoadingChanges] = useState(false);
 
   const fetchUrls = async (page = 1, newFilters = filters) => {
@@ -153,9 +154,11 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
       const response = await fetch(`/api/sites/${siteId}/urls/${url.id}/changes`);
       const data = await response.json();
       setChanges(data.changes || []);
+      setDriveUrls(data.driveUrls || null);
     } catch (error) {
       console.error('Error fetching changes:', error);
       setChanges([]);
+      setDriveUrls(null);
     } finally {
       setLoadingChanges(false);
     }
@@ -164,6 +167,7 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
   const closeChangesModal = () => {
     setSelectedUrl(null);
     setChanges([]);
+    setDriveUrls(null);
   };
 
   // Helper function to determine if URL is a document
@@ -400,13 +404,13 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
                   
                   {/* Actions */}
                   <div className="flex items-center gap-2 ml-4">
-                    {url.isChanged && (
+                    {url.status === 'visited' && (
                       <button
                         onClick={() => fetchChanges(url)}
                         className="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors flex items-center gap-1"
                       >
                         <Eye className="w-3 h-3" />
-                        View Changes
+                        View Details
                       </button>
                     )}
                   </div>
@@ -487,7 +491,7 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-700">
               <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-semibold text-white">Page Change History</h3>
+                <h3 className="text-lg font-semibold text-white">Page Details</h3>
                 <p className="text-sm text-gray-400 truncate font-mono mt-1">
                   {selectedUrl.url}
                 </p>
@@ -504,16 +508,52 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
             <div className="p-4 overflow-y-auto max-h-[60vh]">
               {loadingChanges ? (
                 <div className="text-center py-8">
-                  <div className="text-gray-400">Loading change history...</div>
+                  <div className="text-gray-400">Loading page details...</div>
                 </div>
-              ) : changes.length === 0 ? (
+              ) : (
+                <>
+                  {/* Drive Links Section - Always show for visited pages */}
+                  {driveUrls && (
+                    <div className="mb-6 p-4 bg-gray-700 rounded-lg border border-gray-600">
+                      <h4 className="text-sm font-medium text-gray-300 mb-3">📁 View Files</h4>
+                      <div className="flex items-center gap-4">
+                        {driveUrls.screenshot_url && (
+                          <a
+                            href={driveUrls.screenshot_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-2 px-3 py-2 bg-gray-800 rounded border border-gray-600 hover:border-blue-500 transition-colors"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            Screenshots
+                          </a>
+                        )}
+                        {driveUrls.html_url && (
+                          <a
+                            href={driveUrls.html_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-2 px-3 py-2 bg-gray-800 rounded border border-gray-600 hover:border-blue-500 transition-colors"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            HTML Files
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Changes Section */}
+                  {changes.length === 0 ? (
                 <div className="text-center py-8">
-                  <div className="text-gray-400">No detailed change history available</div>
+                      <div className="text-gray-400">No changes detected</div>
                   <div className="text-sm text-gray-500 mt-2">
-                    This URL was marked as changed, but detailed change information is not stored yet.
+                        This page has been crawled but no content changes have been detected yet.
                   </div>
                 </div>
               ) : (
+                    <>
+                      <h4 className="text-sm font-medium text-gray-300 mb-4">📝 Change History</h4>
                 <div className="space-y-4">
                   {changes.map((change, index) => (
                     <div key={change.id} className="bg-gray-900 rounded-lg p-4 border border-gray-600">
@@ -697,6 +737,9 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
                     </div>
                   ))}
                 </div>
+                    </>
+                  )}
+                </>
               )}
             </div>
           </div>

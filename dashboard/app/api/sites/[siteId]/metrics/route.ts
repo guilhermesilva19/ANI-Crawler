@@ -8,13 +8,16 @@ export async function GET(
   try {
     const { siteId } = await params;
     
+    // Convert site ID format (dashboard uses hyphens, database uses underscores)
+    const dbSiteId = siteId.replace(/-/g, '_');
+    
     // Get last 7 days of daily stats
     const dailyStats = await getDailyStats();
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
     const dailyData = await dailyStats.find({ 
-      site_id: siteId,
+      site_id: dbSiteId,
       date: { $gte: sevenDaysAgo.toISOString().split('T')[0] }
     })
     .sort({ date: 1 })
@@ -25,7 +28,7 @@ export async function GET(
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     
     const hourlyPerf = await perfHistory.find({ 
-      site_id: siteId,
+      site_id: dbSiteId,
       timestamp: { $gte: oneDayAgo }
     })
     .sort({ timestamp: 1 })
@@ -82,7 +85,7 @@ export async function GET(
     // Get error rate data
     const urlStates = await getUrlStates();
     const errorStats = await urlStates.aggregate([
-      { $match: { site_id: siteId } },
+      { $match: { site_id: dbSiteId } },
       { 
         $group: {
           _id: '$status_info.status_code',
