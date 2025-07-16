@@ -7,6 +7,10 @@ export async function GET(
 ) {
   try {
     const { siteId } = await params;
+    
+    // Convert site ID format (dashboard uses hyphens, database uses underscores)
+    const dbSiteId = siteId.replace(/-/g, '_');
+    
     const { searchParams } = new URL(request.url);
     
     // Pagination parameters
@@ -23,7 +27,7 @@ export async function GET(
     const urlStates = await getUrlStates();
     
     // Build MongoDB query
-    const query: any = { site_id: siteId };
+    const query: any = { site_id: dbSiteId };
     
     // Status filters
     if (status === 'visited') {
@@ -89,20 +93,20 @@ export async function GET(
     
     // Get status counts for filter badges
     const statusCounts = await Promise.all([
-      urlStates.countDocuments({ site_id: siteId }), // total
-      urlStates.countDocuments({ site_id: siteId, status: 'visited' }), // visited
-      urlStates.countDocuments({ site_id: siteId, status: 'remaining' }), // remaining
+      urlStates.countDocuments({ site_id: dbSiteId }), // total
+      urlStates.countDocuments({ site_id: dbSiteId, status: 'visited' }), // visited
+      urlStates.countDocuments({ site_id: dbSiteId, status: 'remaining' }), // remaining
       urlStates.countDocuments({ 
-        site_id: siteId, 
+        site_id: dbSiteId, 
         'status_info.status': { $in: [404, 410] },
         'status_info.error_count': { $gte: 2 }
       }), // deleted
       urlStates.countDocuments({ 
-        site_id: siteId, 
+        site_id: dbSiteId, 
         'status_info.status': { $gte: 400 }
       }), // failed
       urlStates.countDocuments({ 
-        site_id: siteId, 
+        site_id: dbSiteId, 
         last_change: { $exists: true }
       }), // changed
     ]);

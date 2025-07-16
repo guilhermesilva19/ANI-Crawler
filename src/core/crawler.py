@@ -97,7 +97,7 @@ class Crawler:
                 print(f"\nDeleted page detected: {url} (Status: {status_code})")
                 
                 # Record performance for deleted page
-                page_type = "failed"
+                page_type = "deleted"
                 crawl_time = time.time() - start_time
                 self.state_manager.record_page_crawl(url, crawl_time, page_type)
                 return  # Don't process further
@@ -112,12 +112,13 @@ class Crawler:
                 self.state_manager.record_page_crawl(url, crawl_time, page_type)
                 return
 
-            # Skip HTML processing for documents - only monitor availability
-            if '/download/' in url or url.lower().endswith(('.pdf', '.docx', '.xlsx', '.doc', '.xls', '.ppt', '.zip', '.rar',".txt")):
-                print(f"\nDocument available: {url}")
+            # Intelligent file type categorization - only monitor availability for non-HTML content
+            file_type = self._categorize_file_type(url)
+            if file_type != "webpage":
+                print(f"\n{file_type.title()} available: {url}")
                 self.state_manager.add_visited_url(url)
                 crawl_time = time.time() - start_time
-                self.state_manager.record_page_crawl(url, crawl_time, "document")
+                self.state_manager.record_page_crawl(url, crawl_time, file_type)
                 return
 
             # Generate filenames and prepare safe filename for Drive
@@ -383,3 +384,43 @@ class Crawler:
             # Cleanup services
             if hasattr(self, 'scheduler_service') and self.scheduler_service:
                 self.scheduler_service.stop_scheduler()
+
+    def _categorize_file_type(self, url: str) -> str:
+        """Intelligently categorize file types based on URL and content patterns."""
+        url_lower = url.lower()
+        
+        # Check for download/file patterns first (most common on education.gov.au)
+        if '/download/' in url_lower or '/downloads/' in url_lower or '/files/' in url_lower or '/attachments/' in url_lower:
+            return "document"  # Keep consistent with existing 11k URLs
+        
+        # Document files - handle both .extension and /extension patterns
+        elif (url_lower.endswith(('.pdf', '/pdf')) or '.pdf' in url_lower):
+            return "document"  # Keep consistent - don't create new "pdf" category
+        elif (url_lower.endswith(('.doc', '.docx', '/doc', '/docx')) or any(ext in url_lower for ext in ['.doc', '.docx'])):
+            return "document"
+        elif (url_lower.endswith(('.xls', '.xlsx', '.csv')) or any(ext in url_lower for ext in ['.xls', '.xlsx', '.csv'])):
+            return "document"
+        elif (url_lower.endswith(('.ppt', '.pptx')) or any(ext in url_lower for ext in ['.ppt', '.pptx'])):
+            return "document"
+        elif (url_lower.endswith(('.txt', '.rtf')) or any(ext in url_lower for ext in ['.txt', '.rtf'])):
+            return "document"
+        
+        # Media files - also keep as document for consistency
+        elif (url_lower.endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp')) or 
+              any(ext in url_lower for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp'])):
+            return "document"
+        elif (url_lower.endswith(('.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm')) or
+              any(ext in url_lower for ext in ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm'])):
+            return "document"
+        elif (url_lower.endswith(('.mp3', '.wav', '.flac', '.aac', '.ogg')) or
+              any(ext in url_lower for ext in ['.mp3', '.wav', '.flac', '.aac', '.ogg'])):
+            return "document"
+        
+        # Archive files
+        elif (url_lower.endswith(('.zip', '.rar', '.7z', '.tar', '.gz', '.bz2')) or
+              any(ext in url_lower for ext in ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'])):
+            return "document"
+        
+        # Default to webpage for HTML content
+        else:
+            return "webpage"

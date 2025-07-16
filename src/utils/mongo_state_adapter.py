@@ -386,6 +386,8 @@ class MongoStateAdapter:
                 'new_pages': 0,
                 'changed_pages': 0,
                 'failed_pages': 0,
+                'deleted_pages': 0,
+                'document_pages': 0,
                 'total_time': 0.0
             }
         
@@ -399,6 +401,10 @@ class MongoStateAdapter:
             self.daily_stats[today]['changed_pages'] += 1
         elif page_type == "failed":
             self.daily_stats[today]['failed_pages'] += 1
+        elif page_type == "deleted":
+            self.daily_stats[today]['deleted_pages'] += 1
+        elif page_type == "document":
+            self.daily_stats[today]['document_pages'] += 1
         
         # Update performance history (keep last 100 entries)
         perf_entry = {

@@ -8,10 +8,13 @@ export async function GET(
   try {
     const { siteId } = await params;
     
+    // Convert site ID format (dashboard uses hyphens, database uses underscores)
+    const dbSiteId = siteId.replace(/-/g, '_');
+    
     // Get recent performance data - REAL-TIME crawling activity
     const perfHistory = await getPerformanceHistory();
     const recentPerf = await perfHistory.find({ 
-      site_id: siteId 
+      site_id: dbSiteId 
     })
     .sort({ timestamp: -1 })
     .limit(50)  // Get more records to ensure fresh data
@@ -32,7 +35,7 @@ export async function GET(
       status: perf.page_type === 'failed' ? 'error' :
               (perf.crawl_time || 0) > 10 ? 'warning' : 'success'
     }))
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 30);  // Show recent 30 activities
     
     return NextResponse.json({ activities });
