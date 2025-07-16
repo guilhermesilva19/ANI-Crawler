@@ -504,6 +504,26 @@ class MongoStateAdapter:
             print(f"📝 Stored change details for {url}")
         except Exception as e:
             print(f"Error storing page changes: {e}")
+
+    def update_drive_folders(self, url: str, folder_ids: Dict[str, str]) -> None:
+        """Store Google Drive folder information for a URL."""
+        try:
+            drive_data = {
+                "main_folder_id": folder_ids.get('main_folder_id'),
+                "html_folder_id": folder_ids.get('html_folder_id'), 
+                "screenshot_folder_id": folder_ids.get('screenshot_folder_id'),
+                "main_folder_url": f"https://drive.google.com/drive/folders/{folder_ids.get('main_folder_id')}",
+                "html_folder_url": f"https://drive.google.com/drive/folders/{folder_ids.get('html_folder_id')}",
+                "screenshot_folder_url": f"https://drive.google.com/drive/folders/{folder_ids.get('screenshot_folder_id')}"
+            }
+            
+            self.db.url_states.update_one(
+                {"site_id": self.site_id, "url": url},
+                {"$set": {"drive_folders": drive_data}},
+                upsert=False  # Only update existing documents
+            )
+        except Exception as e:
+            print(f"Error storing Drive folder URLs: {e}")
     
     def get_progress_stats(self) -> Dict:
         """Get comprehensive progress statistics."""
