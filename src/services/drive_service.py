@@ -153,6 +153,27 @@ class DriveService:
             print(f"\nError deleting file: {e}")
             return False
 
+    def delete_folder(self, folder_id: str) -> bool:
+        """Delete a folder from Google Drive."""
+        try:
+            # Check if folder has any contents first
+            response = self.service.files().list(
+                q=f"'{folder_id}' in parents and trashed = false",
+                fields="files(id)"
+            ).execute()
+            
+            # If folder has contents, delete them first
+            for file in response.get('files', []):
+                self.delete_file(file['id'])
+            
+            # Now delete the empty folder
+            self.service.files().delete(fileId=folder_id).execute()
+            return True
+        except Exception as e:
+            print(f"\nError deleting folder: {e}")
+            return False
+    
+
     def delete_files_older_than(self, folder_id: str, file_name: str, days: int = 90) -> None:
         """Delete files in a folder that are older than specified days."""
         try:

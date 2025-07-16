@@ -122,7 +122,16 @@ class MongoStateAdapter:
         })
     
     def _load_url_states(self):
-        """Load URL states into memory."""
+        """Load URL states into memory with validation."""
+        # Clear memory and rebuild from DB to ensure consistency
+        old_visited_count = len(self.visited_urls)
+        old_remaining_count = len(self.remaining_urls)
+        
+        self.visited_urls = set()
+        self.remaining_urls = set()
+        self.next_crawl = {}
+        self.url_status = {}
+        
         # Load visited URLs
         visited_docs = self.db.url_states.find({
             "site_id": self.site_id,
@@ -139,11 +148,24 @@ class MongoStateAdapter:
             "status": "remaining"
         }, {"url": 1})
         
-        self.remaining_urls = set(doc['url'] for doc in remaining_docs)
+        for doc in remaining_docs:
+            self.remaining_urls.add(doc['url'])
         
         # If no remaining URLs, initialize with targets
         if not self.remaining_urls:
             self.remaining_urls.update(TARGET_URLS)
+            # Add to database
+            for url in TARGET_URLS:
+                self.db.url_states.update_one(
+                    {"site_id": self.site_id, "url": url},
+                    {"$setOnInsert": {
+                        "site_id": self.site_id,
+                        "url": url,
+                        "status": "remaining",
+                        "first_seen": datetime.now()
+                    }},
+                    upsert=True
+                )
         
         # Load URL status info
         status_docs = self.db.url_states.find({
@@ -154,6 +176,13 @@ class MongoStateAdapter:
         for doc in status_docs:
             if 'status_info' in doc:
                 self.url_status[doc['url']] = doc['status_info']
+        
+        # Log any significant discrepancies for monitoring
+        new_visited_count = len(self.visited_urls)
+        new_remaining_count = len(self.remaining_urls)
+        
+        if abs(old_visited_count - new_visited_count) > 10 or abs(old_remaining_count - new_remaining_count) > 10:
+            print(f"📊 Memory sync: visited {old_visited_count}→{new_visited_count}, remaining {old_remaining_count}→{new_remaining_count}")
     
     def _load_daily_stats(self):
         """Load daily statistics."""
@@ -226,12 +255,9 @@ class MongoStateAdapter:
         return url in self.visited_urls
     
     def add_visited_url(self, url: str) -> None:
-        """Add URL to visited set with MongoDB sync."""
-        self.visited_urls.add(url)
-        self.next_crawl[url] = datetime.now()
-        
-        # Sync to MongoDB
-        self.db.url_states.update_one(
+        """Add URL to visited with database-first approach."""
+        # Update database first
+        result = self.db.url_states.update_one(
             {"site_id": self.site_id, "url": url},
             {
                 "$set": {
@@ -248,10 +274,16 @@ class MongoStateAdapter:
             upsert=True
         )
         
-        # Remove from remaining if present
-        self.remaining_urls.discard(url)
-        
-        self.save_progress()
+        # Only update memory if database update succeeded
+        if result.acknowledged:
+            self.visited_urls.add(url)
+            self.next_crawl[url] = datetime.now()
+            self.remaining_urls.discard(url)
+            self.save_progress()
+        else:
+            print(f"⚠️  Failed to update database for URL: {url}")
+            # Try to reload from database to maintain consistency
+            self._load_url_states()
     
     def update_url_status(self, url: str, status_code: int) -> bool:
         """Update URL status and return True if this indicates a deleted page."""
@@ -335,29 +367,39 @@ class MongoStateAdapter:
         self.save_progress()
     
     def get_next_url(self) -> Optional[str]:
-        """Get the next URL to crawl."""
-        if not self.remaining_urls:
-            # Check for URLs that need recrawling
-            now = datetime.now()
-            for url, last_crawl in self.next_crawl.items():
-                if self.should_recrawl(url):
-                    self.remaining_urls.add(url)
-                    # Update MongoDB status
-                    self.db.url_states.update_one(
-                        {"site_id": self.site_id, "url": url},
-                        {"$set": {"status": "remaining"}}
-                    )
-            
-            if not self.remaining_urls:
-                return None
-
-        url = self.remaining_urls.pop()
-        # Update MongoDB status
-        self.db.url_states.update_one(
-            {"site_id": self.site_id, "url": url},
-            {"$set": {"status": "in_progress"}}
+        """Get next URL directly from database, not memory."""
+        # Try to get a remaining URL
+        url_doc = self.db.url_states.find_one_and_update(
+            {"site_id": self.site_id, "status": "remaining"},
+            {"$set": {"status": "in_progress", "updated_at": datetime.now()}},
+            return_document=True
         )
-        return url
+        
+        if url_doc:
+            # Update memory to stay in sync
+            url = url_doc['url']
+            self.remaining_urls.discard(url)
+            return url
+        
+        # No remaining URLs, check for recrawl candidates
+        cutoff_date = datetime.now() - timedelta(days=3)
+        recrawl_doc = self.db.url_states.find_one_and_update(
+            {
+                "site_id": self.site_id, 
+                "status": "visited",
+                "last_crawled": {"$lt": cutoff_date}
+            },
+            {"$set": {"status": "in_progress", "updated_at": datetime.now()}},
+            return_document=True
+        )
+        
+        if recrawl_doc:
+            # Update memory to stay in sync
+            url = recrawl_doc['url']
+            self.remaining_urls.add(url)  # Add back for memory consistency
+            return url
+            
+        return None
     
     def should_recrawl(self, url: str, recrawl_days: int = 3) -> bool:
         """Check if a URL should be recrawled."""
@@ -565,46 +607,28 @@ class MongoStateAdapter:
         try:
             cutoff_time = datetime.now() - timedelta(minutes=stuck_minutes)
             
-            # Find URLs stuck in progress for more than the cutoff time
-            stuck_docs = self.db.url_states.find({
-                "site_id": self.site_id,
-                "status": "in_progress",
-                "updated_at": {"$lt": cutoff_time}
-            })
+            # Update stuck URLs back to remaining (don't count in stats)
+            result = self.db.url_states.update_many(
+                {
+                    "site_id": self.site_id,
+                    "status": "in_progress",
+                    "updated_at": {"$lt": cutoff_time}
+                },
+                {
+                    "$set": {
+                        "status": "remaining",
+                        "updated_at": datetime.now(),
+                    },
+                    "$inc": {"rescue_count": 1}  # Track rescues separately
+                }
+            )
             
-            rescued_count = 0
-            rescued_urls = []
-            
-            for doc in stuck_docs:
-                url = doc['url']
-                rescued_urls.append(url)
-                
-                # Move back to remaining queue
-                self.remaining_urls.add(url)
-                
-                # Update database status
-                self.db.url_states.update_one(
-                    {"site_id": self.site_id, "url": url},
-                    {
-                        "$set": {
-                            "status": "remaining",
-                            "updated_at": datetime.now(),
-                            "rescue_count": doc.get('rescue_count', 0) + 1,
-                            "last_rescued": datetime.now()
-                        }
-                    }
-                )
-                
-                rescued_count += 1
+            rescued_count = result.modified_count
             
             if rescued_count > 0:
                 print(f"🚑 Rescued {rescued_count} stuck URLs (stuck > {stuck_minutes} min)")
-                for url in rescued_urls[:3]:  # Show first 3 as examples
-                    print(f"   • {url}")
-                if len(rescued_urls) > 3:
-                    print(f"   • ... and {len(rescued_urls) - 3} more")
-                    
-                self.save_progress()
+                # Reload memory from database to sync
+                self._load_url_states()
             
             return rescued_count
             
