@@ -275,6 +275,30 @@ class StateManager:
             print(f"📝 Logged change details for {url} to {change_log_file}")
         except Exception as e:
             print(f"Error storing page changes: {e}")
+
+    def update_drive_folders(self, url: str, folder_ids: Dict[str, str]) -> None:
+        """Store Google Drive folder information for a URL (file-based fallback)."""
+        try:
+            import json
+            drive_log_file = "drive_folders.jsonl"
+            
+            drive_record = {
+                "timestamp": datetime.now().isoformat(),
+                "url": url,
+                "folder_ids": folder_ids,
+                "drive_urls": {
+                    "main_folder_url": f"https://drive.google.com/drive/folders/{folder_ids.get('main_folder_id')}",
+                    "html_folder_url": f"https://drive.google.com/drive/folders/{folder_ids.get('html_folder_id')}",
+                    "screenshot_folder_url": f"https://drive.google.com/drive/folders/{folder_ids.get('screenshot_folder_id')}"
+                }
+            }
+            
+            with open(drive_log_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(drive_record) + "\n")
+                
+            print(f"📂 Logged Drive folder URLs for {url} to {drive_log_file}")
+        except Exception as e:
+            print(f"Error storing Drive folder URLs: {e}")
     
     def get_progress_stats(self) -> Dict:
         """Get comprehensive progress statistics for dashboard."""
