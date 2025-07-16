@@ -155,6 +155,14 @@ class Crawler:
                 screenshot_url = self.drive_service.upload_file(screenshot_path, screenshot_folder_id)
                 os.remove(screenshot_path)
 
+            # Store Drive folder URLs in database (for both discovery AND recrawl)
+            folder_ids = {
+                'main_folder_id': folder_id,
+                'html_folder_id': html_folder_id,
+                'screenshot_folder_id': screenshot_folder_id
+            }
+            self.state_manager.update_drive_folders(url, folder_ids)
+
             # Handle file versions in Drive
             new_file_id = self.drive_service.find_file(os.path.basename(filename), html_folder_id)
             old_file_id = self.drive_service.find_file(os.path.basename(old_file), html_folder_id)
