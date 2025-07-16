@@ -286,7 +286,7 @@ class Crawler:
             if 'created_folder_ids' in locals():
                 for folder_id in created_folder_ids:
                     try:
-                        self.drive_service.delete_file(folder_id)
+                        self.drive_service.delete_folder(folder_id)
                         print(f"🗑️  Cleaned up orphaned folder: {folder_id}")
                     except Exception as cleanup_error:
                         print(f"⚠️  Could not clean up folder {folder_id}: {cleanup_error}")
