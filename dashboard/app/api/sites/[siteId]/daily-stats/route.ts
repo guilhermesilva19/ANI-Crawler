@@ -141,7 +141,7 @@ export async function GET(
       }),
       db.collection('url_states').countDocuments({ 
         site_id: dbSiteId, 
-        'status_info.status': { $in: [404, 410] },
+        'status_info.status': { $gte: 400 },
         'status_info.error_count': { $gte: 2 }
       })
     ]);

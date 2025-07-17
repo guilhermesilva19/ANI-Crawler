@@ -24,7 +24,7 @@ export async function GET(
       urlStates.countDocuments({ site_id: dbSiteId }), // TOTAL discovered pages (all statuses)
       urlStates.countDocuments({ 
         site_id: dbSiteId, 
-        'status_info.status': { $in: [404, 410] },
+        'status_info.status': { $gte: 400 },
         'status_info.error_count': { $gte: 2 }
       }),
       urlStates.countDocuments({ 

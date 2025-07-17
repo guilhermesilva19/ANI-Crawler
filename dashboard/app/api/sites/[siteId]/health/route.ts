@@ -17,7 +17,7 @@ export async function GET(
     // Find pages with error status codes (potential deleted pages)
     const deletedPages = await urlStates.find({
       site_id: dbSiteId,
-      'status_info.status': { $in: [404, 410] }, // Not Found, Gone
+      'status_info.status': { $gte: 400 }, // All error codes
       'status_info.error_count': { $gte: 2 }      // Multiple failures
     }).toArray();
     

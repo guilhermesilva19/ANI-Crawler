@@ -33,10 +33,10 @@ export async function GET(
       urlStates.countDocuments({ site_id: dbSiteId, status: 'in_progress' }),
       // TOTAL discovered pages (ALL statuses) - Single source of truth
       urlStates.countDocuments({ site_id: dbSiteId }),
-      // Deleted pages (failed with multiple errors)
+      // Deleted pages (failed with multiple errors) - FIXED: Include ALL error codes >= 400
       urlStates.countDocuments({ 
         site_id: dbSiteId, 
-        'status_info.status': { $in: [404, 410] },
+        'status_info.status': { $gte: 400 },
         'status_info.error_count': { $gte: 2 }
       })
     ]);
