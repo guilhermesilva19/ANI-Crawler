@@ -62,8 +62,11 @@ export async function GET(
     
     // Calculate UTC boundaries for "last 7 days" (7-day rolling window)
     const utcNow = new Date();
-    const utc7DaysAgo = new Date(utcNow.getTime() - (7 * 24 * 60 * 60 * 1000)); // 7 days ago
+    const utc7DaysAgo = new Date(utcNow);
+    utc7DaysAgo.setDate(utc7DaysAgo.getDate() - 6); // 6 days ago + today = 7 days
+    utc7DaysAgo.setUTCHours(0, 0, 0, 0);
     const utcEndOfToday = new Date(utcNow);
+    utcEndOfToday.setUTCHours(23, 59, 59, 999);
     
     // Get 7-day date range in AEST format for daily_stats collection queries
     // Daily stats uses AEST date strings, calculate the date range
@@ -118,7 +121,7 @@ export async function GET(
       });
     }
     
-    // 2. Get pages discovered in last 7 days (first_seen in date range)
+    // 2. Get pages discovered in last 7 days (CONSISTENT: use first_seen field)
     const discoveredThisWeek = await db.collection('url_states').countDocuments({
       site_id: dbSiteId,
       first_seen: {
@@ -159,18 +162,19 @@ export async function GET(
     // Categorize deleted pages by URL patterns
     const deletedBreakdown = categorizeDeletedPages(deletedDocsThisWeek);
     
-    // 6. Get current status totals for context
-    const [totalPages, visitedPages, remainingPages, failedPages, deletedPages] = await Promise.all([
+    // 6. Get current status totals for context (CONSISTENT with status route)
+    const [totalPages, visitedPages, remainingPages, inProgressPages, failedPages, deletedPages] = await Promise.all([
       db.collection('url_states').countDocuments({ site_id: dbSiteId }),
       db.collection('url_states').countDocuments({ site_id: dbSiteId, status: 'visited' }),
       db.collection('url_states').countDocuments({ site_id: dbSiteId, status: 'remaining' }),
+      db.collection('url_states').countDocuments({ site_id: dbSiteId, status: 'in_progress' }),
       db.collection('url_states').countDocuments({ 
         site_id: dbSiteId, 
         'status_info.status': { $gte: 400 } 
       }),
       db.collection('url_states').countDocuments({ 
         site_id: dbSiteId, 
-        'status_info.status': { $in: [404, 410] },
+        'status_info.status': { $gte: 400 },
         'status_info.error_count': { $gte: 2 }
       })
     ]);
@@ -228,9 +232,10 @@ export async function GET(
         total_pages: totalPages,
         visited_pages: visitedPages,
         remaining_pages: remainingPages,
+        in_progress_pages: inProgressPages,
         failed_pages: failedPages,
         deleted_pages: deletedPages,
-        description: 'Current cumulative totals for context'
+        description: 'Current cumulative totals for context (consistent with status route)'
       },
       metadata: {
         utc_start: utc7DaysAgo.toISOString(),
