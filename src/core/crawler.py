@@ -15,7 +15,7 @@ from src.services.sheets_service import SheetsService
 from src.services.scheduler_service import SchedulerService
 from src.utils.content_comparison import compare_content, extract_links
 from src.utils.mongo_state_adapter import MongoStateAdapter
-from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID
+from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID, EXCLUDE_PREFIXES
 
 __all__ = ['Crawler']
 
@@ -365,6 +365,8 @@ class Crawler:
                 url = url.rstrip("/")
                 # Skip if URL should be excluded
                 if (CHECK_PREFIX and url.startswith(CHECK_PREFIX)):
+                    continue
+                if any(url.startswith(prefix) for prefix in EXCLUDE_PREFIXES):
                     continue
                 print(f"\nCrawling: {url}")
                 self.process_page(url)
