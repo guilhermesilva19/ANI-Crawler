@@ -29,11 +29,13 @@ export async function GET(
     // Build MongoDB query
     const query: any = { site_id: dbSiteId };
     
-    // Status filters
+    // Status filters (COMPLETE: includes all status types)
     if (status === 'visited') {
       query.status = 'visited';
     } else if (status === 'remaining') {
       query.status = 'remaining';
+    } else if (status === 'in_progress') {
+      query.status = 'in_progress';
     } else if (status === 'deleted') {
       query['status_info.status'] = { $in: [404, 410] };
       query['status_info.error_count'] = { $gte: 2 };
