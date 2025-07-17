@@ -15,7 +15,7 @@ from src.services.sheets_service import SheetsService
 from src.services.scheduler_service import SchedulerService
 from src.utils.content_comparison import compare_content, extract_links
 from src.utils.mongo_state_adapter import MongoStateAdapter
-from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID
+from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID, EXCLUDE_PREFIXES
 
 __all__ = ['Crawler']
 
@@ -100,6 +100,9 @@ class Crawler:
                 page_type = "deleted"
                 crawl_time = time.time() - start_time
                 self.state_manager.record_page_crawl(url, crawl_time, page_type)
+                
+                # CRITICAL FIX: Mark as visited to prevent duplicate processing in same cycle
+                self.state_manager.add_visited_url(url)
                 return  # Don't process further
             
             if not soup:
@@ -110,6 +113,9 @@ class Crawler:
                 page_type = "failed"
                 crawl_time = time.time() - start_time
                 self.state_manager.record_page_crawl(url, crawl_time, page_type)
+                
+                # CRITICAL FIX: Mark as visited to prevent duplicate processing in same cycle
+                self.state_manager.add_visited_url(url)
                 return
 
             # Intelligent file type categorization - only monitor availability for non-HTML content
@@ -366,6 +372,8 @@ class Crawler:
                 # Skip if URL should be excluded
                 if (CHECK_PREFIX and url.startswith(CHECK_PREFIX)):
                     continue
+                if any(url.startswith(prefix) for prefix in EXCLUDE_PREFIXES):
+                    continue
                 print(f"\nCrawling: {url}")
                 self.process_page(url)
                 pages_processed_this_session += 1
@@ -382,7 +390,7 @@ class Crawler:
                     self.state_manager.rescue_stuck_urls(stuck_minutes=60)
                 
                 # Polite delay between requests
-                time.sleep(5)
+                time.sleep(30)
         except KeyboardInterrupt:
             print("\nCrawling interrupted by user.")
         except Exception as e:

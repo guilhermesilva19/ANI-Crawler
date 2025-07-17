@@ -29,13 +29,15 @@ export async function GET(
     // Build MongoDB query
     const query: any = { site_id: dbSiteId };
     
-    // Status filters
+    // Status filters (COMPLETE: includes all status types)
     if (status === 'visited') {
       query.status = 'visited';
     } else if (status === 'remaining') {
       query.status = 'remaining';
+    } else if (status === 'in_progress') {
+      query.status = 'in_progress';
     } else if (status === 'deleted') {
-      query['status_info.status'] = { $in: [404, 410] };
+      query['status_info.status'] = { $gte: 400 };
       query['status_info.error_count'] = { $gte: 2 };
     } else if (status === 'failed') {
       query['status_info.status'] = { $gte: 400 };
@@ -91,14 +93,15 @@ export async function GET(
     const hasNextPage = page < totalPages;
     const hasPrevPage = page > 1;
     
-    // Get status counts for filter badges
+    // Get status counts for filter badges (CONSISTENT with status route)
     const statusCounts = await Promise.all([
       urlStates.countDocuments({ site_id: dbSiteId }), // total
       urlStates.countDocuments({ site_id: dbSiteId, status: 'visited' }), // visited
       urlStates.countDocuments({ site_id: dbSiteId, status: 'remaining' }), // remaining
+      urlStates.countDocuments({ site_id: dbSiteId, status: 'in_progress' }), // in_progress
       urlStates.countDocuments({ 
         site_id: dbSiteId, 
-        'status_info.status': { $in: [404, 410] },
+        'status_info.status': { $gte: 400 },
         'status_info.error_count': { $gte: 2 }
       }), // deleted
       urlStates.countDocuments({ 
@@ -131,9 +134,10 @@ export async function GET(
         total: statusCounts[0],
         visited: statusCounts[1],
         remaining: statusCounts[2],
-        deleted: statusCounts[3],
-        failed: statusCounts[4],
-        changed: statusCounts[5]
+        in_progress: statusCounts[3],
+        deleted: statusCounts[4],
+        failed: statusCounts[5],
+        changed: statusCounts[6]
       }
     };
     

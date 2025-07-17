@@ -27,6 +27,40 @@ export async function GET(
     const perfHistory = await getPerformanceHistory();
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     
+    // Also get data for intelligent current speed calculation (same logic as status route)
+    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000);
+    const earliestRecord = await perfHistory.findOne(
+      { site_id: dbSiteId }, 
+      { sort: { timestamp: 1 } }
+    );
+    
+    let currentSpeedWindow;
+    let currentHoursOfData;
+    
+    if (!earliestRecord) {
+      currentSpeedWindow = fiveHoursAgo;
+      currentHoursOfData = 5;
+    } else {
+      const crawlerStartTime = new Date(earliestRecord.timestamp);
+      const now = new Date();
+      const actualHoursRunning = (now.getTime() - crawlerStartTime.getTime()) / (1000 * 60 * 60);
+      
+      if (actualHoursRunning >= 5) {
+        currentSpeedWindow = fiveHoursAgo;
+        currentHoursOfData = 5;
+      } else {
+        currentSpeedWindow = crawlerStartTime;
+        currentHoursOfData = Math.max(actualHoursRunning, 0.1);
+      }
+    }
+    
+    // Get current speed pages for metrics
+    const currentSpeedPages = await perfHistory.countDocuments({ 
+      site_id: dbSiteId,
+      timestamp: { $gte: currentSpeedWindow }
+    });
+    const currentSpeedCalc = Math.round(currentSpeedPages / currentHoursOfData);
+    
     const hourlyPerf = await perfHistory.find({ 
       site_id: dbSiteId,
       timestamp: { $gte: oneDayAgo }
@@ -42,45 +76,21 @@ export async function GET(
       hourlyGroups[hour].push(perf);
     });
     
-    const speedTrend = Object.entries(hourlyGroups).map(([hour, perfs]) => {
-      let avgSpeed = 0;
-      if (perfs.length >= 2) {
-        // Sort by timestamp to ensure chronological order
-        const sortedPerfs = perfs.sort((a: any, b: any) => 
-          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-        );
-        
-        // Calculate time differences between consecutive URLs
-        let totalTimeBetweenUrls = 0;
-        let validIntervals = 0;
-        
-        for (let i = 1; i < sortedPerfs.length; i++) {
-          const currentTime = new Date(sortedPerfs[i].timestamp).getTime();
-          const previousTime = new Date(sortedPerfs[i-1].timestamp).getTime();
-          const timeDiffSeconds = (currentTime - previousTime) / 1000;
-          
-          // Only count reasonable intervals (between 10 seconds and 10 minutes)
-          if (timeDiffSeconds >= 10 && timeDiffSeconds <= 600) {
-            totalTimeBetweenUrls += timeDiffSeconds;
-            validIntervals++;
-          }
-        }
-        
-        // Calculate average time between URLs and real speed
-        const avgTimeBetweenUrls = validIntervals > 0 ? totalTimeBetweenUrls / validIntervals : 0;
-        avgSpeed = avgTimeBetweenUrls > 0 ? Math.round(3600 / avgTimeBetweenUrls) : 0;
-      } else if (perfs.length === 1) {
-        // Fallback for single record: estimate based on processing time + typical delay
-        const crawlTime = perfs[0].crawl_time || 30;
-        const estimatedTotalTime = crawlTime + 30; // Add 30s delay
-        avgSpeed = Math.round(3600 / estimatedTotalTime);
-      }
-      return {
+    // Generate hourly speed trend using simple count-based logic
+    const speedTrend = [];
+    const hourlyKeys = Object.keys(hourlyGroups).sort();
+    
+    for (const hour of hourlyKeys) {
+      const perfs = hourlyGroups[hour];
+      // Simple: Speed = number of pages crawled in that hour
+      const hourlySpeed = perfs.length;
+      
+      speedTrend.push({
         time: new Date(hour + ':00:00Z').getTime(),
-        speed: avgSpeed,
+        speed: hourlySpeed,
         count: perfs.length
-      };
-    });
+      });
+    }
     
     // Get error rate data
     const urlStates = await getUrlStates();
@@ -115,6 +125,7 @@ export async function GET(
       errorCount,
       totalRequests,
       performance: {
+        currentSpeed: currentSpeedCalc, // Intelligent 5-hour (or since start) speed calculation
         avgSpeed: speedTrend.length > 0 
           ? Math.round(speedTrend.reduce((sum: number, s: any) => sum + s.speed, 0) / speedTrend.length)
           : 0,
@@ -123,7 +134,13 @@ export async function GET(
           : 0,
         minSpeed: speedTrend.length > 0 
           ? Math.min(...speedTrend.map((s: any) => s.speed))
-          : 0
+          : 0,
+        speedCalculation: {
+          hoursOfData: currentHoursOfData.toFixed(1),
+          pagesInWindow: currentSpeedPages,
+          windowStart: currentSpeedWindow.toISOString(),
+          isFullFiveHours: currentHoursOfData >= 5
+        }
       }
     };
     
