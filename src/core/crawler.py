@@ -384,7 +384,7 @@ class Crawler:
                     self.state_manager.rescue_stuck_urls(stuck_minutes=60)
                 
                 # Polite delay between requests
-                time.sleep(5)
+                time.sleep(30)
         except KeyboardInterrupt:
             print("\nCrawling interrupted by user.")
         except Exception as e:
