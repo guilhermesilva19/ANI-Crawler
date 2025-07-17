@@ -391,43 +391,28 @@ class StateManager:
     
     def _calculate_throughput_from_intervals(self) -> float:
         """
-        Calculate actual crawling throughput based on time intervals between page completions.
+        Calculate pages per hour by counting pages crawled in last 60 minutes.
         
-        This method analyzes the time elapsed between consecutive page crawls to determine
-        the true processing rate, including system delays and processing overhead.
+        Simple and accurate method using in-memory performance history.
+        For file-based storage, counts recent entries in last hour.
         
         Returns:
-            float: Pages processed per hour based on actual interval analysis.
-                   Returns 0.0 if insufficient data is available.
+            float: Pages processed per hour based on last hour's activity.
         """
-        if len(self.performance_history) < 2:
-            return 0.0
-        
-        # Extract recent performance entries for analysis
-        recent_performance_data = self.performance_history[-20:]
-        chronologically_sorted_data = sorted(recent_performance_data, key=lambda entry: entry['timestamp'])
-        
-        total_interval_duration = 0.0
-        validated_interval_count = 0
-        
-        # Analyze time intervals between consecutive page completions
-        for current_index in range(1, len(chronologically_sorted_data)):
-            current_completion_time = chronologically_sorted_data[current_index]['timestamp']
-            previous_completion_time = chronologically_sorted_data[current_index - 1]['timestamp']
-            interval_duration_seconds = (current_completion_time - previous_completion_time).total_seconds()
+        try:
+            # Calculate 1 hour ago
+            one_hour_ago = datetime.now() - timedelta(hours=1)
             
-            # Validate interval duration to exclude outliers and system interruptions
-            # Acceptable range: 10 seconds to 10 minutes per page
-            if 10 <= interval_duration_seconds <= 600:
-                total_interval_duration += interval_duration_seconds
-                validated_interval_count += 1
-        
-        # Calculate throughput rate
-        if validated_interval_count > 0:
-            average_interval_duration = total_interval_duration / validated_interval_count
-            pages_processed_per_hour = 3600 / average_interval_duration
-            return pages_processed_per_hour
-        
-        return 0.0
+            # Count pages crawled in last hour from performance history
+            pages_last_hour = 0
+            for entry in self.performance_history:
+                if entry['timestamp'] >= one_hour_ago:
+                    pages_last_hour += 1
+            
+            return float(pages_last_hour)  # Already pages per hour!
+            
+        except Exception as e:
+            print(f"Error calculating pages per hour: {e}")
+            return 0.0
     
  

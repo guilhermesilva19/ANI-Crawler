@@ -9,12 +9,15 @@ interface SiteStatusData {
   totalPages: number;
   completedPages: number;
   remainingPages: number;
+  inProgressPages: number;
+  unfinishedPages: number;
   progressPercent: number;
   currentSpeed: number;
   etaHours: number | null;
   statusCounts: {
     visited: number;
     remaining: number;
+    in_progress: number;
     failed: number;
     deleted: number;
     changed: number;
@@ -63,12 +66,15 @@ export default function SiteStatus({ siteId }: SiteStatusProps) {
         totalPages: statusData.status.totalPages,
         completedPages: statusData.status.completedPages,
         remainingPages: statusData.status.remainingPages,
+        inProgressPages: statusData.status.inProgressPages,
+        unfinishedPages: statusData.status.unfinishedPages,
         progressPercent: statusData.status.progressPercent,
         currentSpeed: statusData.status.currentSpeed,
         etaHours: statusData.status.etaHours,
         statusCounts: {
           visited: urlData.statusCounts.visited,
           remaining: urlData.statusCounts.remaining,
+          in_progress: urlData.statusCounts.in_progress || 0, // Fallback for transition
           failed: urlData.statusCounts.failed,
           deleted: urlData.statusCounts.deleted,
           changed: urlData.statusCounts.changed
@@ -152,6 +158,7 @@ export default function SiteStatus({ siteId }: SiteStatusProps) {
         </div>
         <div className="text-sm text-gray-400 mt-2">
           {data.completedPages.toLocaleString()} / {data.totalPages.toLocaleString()} pages crawled
+          • {data.unfinishedPages.toLocaleString()} remaining
         </div>
       </div>
 
@@ -167,6 +174,10 @@ export default function SiteStatus({ siteId }: SiteStatusProps) {
             <div className="flex justify-between">
               <span className="text-blue-400">• Discovered (new):</span>
               <span className="text-blue-300 font-mono">{data.statusCounts.remaining.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-yellow-400">• In Progress:</span>
+              <span className="text-yellow-300 font-mono">{data.statusCounts.in_progress.toLocaleString()}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-green-400">• Changed:</span>

@@ -129,11 +129,12 @@ export async function GET(
     // Categorize deleted pages by URL patterns
     const deletedBreakdown = categorizeDeletedPages(deletedDocsToday);
     
-    // 6. Get current status totals for context
-    const [totalPages, visitedPages, remainingPages, failedPages, deletedPages] = await Promise.all([
+    // 6. Get current status totals for context (CONSISTENT with status route)
+    const [totalPages, visitedPages, remainingPages, inProgressPages, failedPages, deletedPages] = await Promise.all([
       db.collection('url_states').countDocuments({ site_id: dbSiteId }),
       db.collection('url_states').countDocuments({ site_id: dbSiteId, status: 'visited' }),
       db.collection('url_states').countDocuments({ site_id: dbSiteId, status: 'remaining' }),
+      db.collection('url_states').countDocuments({ site_id: dbSiteId, status: 'in_progress' }),
       db.collection('url_states').countDocuments({ 
         site_id: dbSiteId, 
         'status_info.status': { $gte: 400 } 
@@ -183,9 +184,10 @@ export async function GET(
         total_pages: totalPages,
         visited_pages: visitedPages,
         remaining_pages: remainingPages,
+        in_progress_pages: inProgressPages,
         failed_pages: failedPages,
         deleted_pages: deletedPages,
-        description: 'Current cumulative totals for context'
+        description: 'Current cumulative totals for context (consistent with status route)'
       },
       metadata: {
         aest_date: aestTodayString,

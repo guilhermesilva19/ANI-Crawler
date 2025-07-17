@@ -22,23 +22,24 @@ export async function GET(
       );
     }
     
-    // Get URL counts
+    // SINGLE SOURCE OF TRUTH: Count all URL statuses consistently
     const urlStates = await getUrlStates();
-    const visitedCount = await urlStates.countDocuments({ 
-      site_id: dbSiteId, 
-      status: 'visited' 
-    });
-    const remainingCount = await urlStates.countDocuments({ 
-      site_id: dbSiteId, 
-      status: 'remaining' 
-    });
-    
-    // Get actual deleted pages count (same logic as URL Explorer)
-    const deletedCount = await urlStates.countDocuments({ 
-      site_id: dbSiteId, 
-      'status_info.status': { $in: [404, 410] },
-      'status_info.error_count': { $gte: 2 }
-    });
+    const [visitedCount, remainingCount, inProgressCount, totalDiscoveredCount, deletedCount] = await Promise.all([
+      // Completed pages (visited)
+      urlStates.countDocuments({ site_id: dbSiteId, status: 'visited' }),
+      // Pending pages (remaining to crawl)
+      urlStates.countDocuments({ site_id: dbSiteId, status: 'remaining' }),
+      // Currently processing pages (in_progress)
+      urlStates.countDocuments({ site_id: dbSiteId, status: 'in_progress' }),
+      // TOTAL discovered pages (ALL statuses) - Single source of truth
+      urlStates.countDocuments({ site_id: dbSiteId }),
+      // Deleted pages (failed with multiple errors)
+      urlStates.countDocuments({ 
+        site_id: dbSiteId, 
+        'status_info.status': { $in: [404, 410] },
+        'status_info.error_count': { $gte: 2 }
+      })
+    ]);
     
     // Get today's stats - ONLY for the selected site
     const today = new Date().toISOString().split('T')[0];
@@ -49,94 +50,98 @@ export async function GET(
       date: today 
     });
     
-    // Get recent performance to check for actual crawler activity
+    // Get performance history for speed and activity calculations
     const perfHistory = await getPerformanceHistory();
-    const recentPerf = await perfHistory.find({ 
-      site_id: dbSiteId 
-    })
-    .sort({ timestamp: -1 })
-    .limit(20)
-    .toArray();
     
-    // Check for actual recent activity within 5 minutes
-    const now = Date.now();
-    const fiveMinutesMs = 5 * 60 * 1000;
-    const actualRecentPerf = recentPerf.filter(perf => {
-      const perfTime = new Date(perf.timestamp).getTime();
-      const timeDiffMs = Math.abs(now - perfTime);
-      return timeDiffMs < fiveMinutesMs && perfTime <= now;
-    });
+    // INTELLIGENT: Use up to 5 hours of data, but adapt to when crawler actually started
+    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000);
     
-    // Only active if there's real activity within last 5 minutes
-    const hasRecentActivity = actualRecentPerf.length > 0;
+    // Find when this site's crawling actually started
+    const earliestRecord = await perfHistory.findOne(
+      { site_id: dbSiteId }, 
+      { sort: { timestamp: 1 } }
+    );
     
-    // Calculate REAL total discovered pages (not estimate!)
-    const totalDiscoveredPages = visitedCount + remainingCount;
+    let speedCalcWindow;
+    let hoursOfData;
     
-    // Calculate current speed - avoid NaN
-    let currentSpeed = 0;
-    let avgTimeBetweenUrls = 0;
-    
-    if (recentPerf.length >= 2) {
-      // Sort by timestamp to ensure chronological order
-      const sortedPerf = recentPerf.sort((a: any, b: any) => 
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-      );
+    if (!earliestRecord) {
+      // No performance data at all
+      speedCalcWindow = fiveHoursAgo;
+      hoursOfData = 5;
+    } else {
+      const crawlerStartTime = new Date(earliestRecord.timestamp);
+      const now = new Date();
+      const actualHoursRunning = (now.getTime() - crawlerStartTime.getTime()) / (1000 * 60 * 60);
       
-      // Calculate time differences between consecutive URLs
-      let totalTimeBetweenUrls = 0;
-      let validIntervals = 0;
-      
-      for (let i = 1; i < sortedPerf.length; i++) {
-        const currentTime = new Date(sortedPerf[i].timestamp).getTime();
-        const previousTime = new Date(sortedPerf[i-1].timestamp).getTime();
-        const timeDiffSeconds = (currentTime - previousTime) / 1000;
-        
-        // Only count reasonable intervals (between 10 seconds and 10 minutes)
-        if (timeDiffSeconds >= 10 && timeDiffSeconds <= 600) {
-          totalTimeBetweenUrls += timeDiffSeconds;
-          validIntervals++;
-        }
+      if (actualHoursRunning >= 5) {
+        // Crawler has been running 5+ hours, use full 5-hour window
+        speedCalcWindow = fiveHoursAgo;
+        hoursOfData = 5;
+      } else {
+        // Crawler started less than 5 hours ago, use all available data
+        speedCalcWindow = crawlerStartTime;
+        hoursOfData = Math.max(actualHoursRunning, 0.1); // Minimum 6 minutes to avoid division by zero
       }
-      
-      // Calculate average time between URLs and real speed
-      avgTimeBetweenUrls = validIntervals > 0 ? totalTimeBetweenUrls / validIntervals : 0;
-      currentSpeed = avgTimeBetweenUrls > 0 ? Math.round(3600 / avgTimeBetweenUrls) : 0;
-    } else if (recentPerf.length === 1) {
-      // Fallback for single record: estimate based on processing time + typical delay
-      const crawlTime = recentPerf[0].crawl_time || 30;
-      const estimatedTotalTime = crawlTime + 30; // Add 30s delay
-      currentSpeed = Math.round(3600 / estimatedTotalTime);
     }
     
-    // Calculate progress using DISCOVERED pages, not estimates
+    // Count pages crawled in our intelligent time window
+    const pagesInWindow = await perfHistory.countDocuments({ 
+      site_id: dbSiteId,
+      timestamp: { $gte: speedCalcWindow }
+    });
+    
+    // Calculate speed: pages per hour over the actual time period
+    const currentSpeed = Math.round(pagesInWindow / hoursOfData);
+    
+    // Check for actual recent activity within 10 minutes (more reliable than 5)
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const pagesInLast10Min = await perfHistory.countDocuments({ 
+      site_id: dbSiteId,
+      timestamp: { $gte: tenMinutesAgo }
+    });
+    
+    // Only active if there's real activity within last 10 minutes
+    const hasRecentActivity = pagesInLast10Min > 0;
+    
+    // Calculate progress using TOTAL discovered pages as denominator
     const completedPages = visitedCount;
-    const progressPercent = totalDiscoveredPages > 0 
-      ? Math.round((completedPages / totalDiscoveredPages) * 100) 
+    const progressPercent = totalDiscoveredCount > 0 
+      ? Math.round((completedPages / totalDiscoveredCount) * 100) 
       : 0;
     
-    // Calculate ETA with fallback
+    // Calculate ETA based ONLY on remaining + in_progress URLs (all unfinished work)
+    const unfinishedPages = remainingCount + inProgressCount;
     let etaHours = null;
-    if (remainingCount > 0) {
+    if (unfinishedPages > 0) {
       if (currentSpeed > 0) {
-        etaHours = remainingCount / currentSpeed;
-      } else {
-        // Fallback: Use estimated 15 seconds per page if no performance data
-        const fallbackSpeed = 3600 / 15; // 240 pages/hour
-        etaHours = remainingCount / fallbackSpeed;
+        // ETA = unfinished pages / speed (pages per hour from last 5 hours or since start)
+        etaHours = unfinishedPages / currentSpeed;
+              } else {
+        // Fallback: Use conservative 300 pages/hour if no performance data available
+        const fallbackSpeed = 300;
+        etaHours = unfinishedPages / fallbackSpeed;
       }
     }
     
     const status = {
       siteId,
-      isActive: hasRecentActivity,  // FIXED: Based on actual activity within 5 minutes
-      totalPages: totalDiscoveredPages,
+      isActive: hasRecentActivity,  // Based on actual activity within 10 minutes
+      totalPages: totalDiscoveredCount,  // FIXED: Use single source of truth
       completedPages,
       remainingPages: remainingCount,
+      inProgressPages: inProgressCount,  // NEW: Show in_progress status
+      unfinishedPages,  // NEW: remaining + in_progress combined
       progressPercent,
       currentSpeed,
-      avgCrawlTime: avgTimeBetweenUrls > 0 ? avgTimeBetweenUrls.toFixed(1) : '0.0',
+      avgCrawlTime: currentSpeed > 0 ? (3600 / currentSpeed).toFixed(1) : '0.0', // Seconds per page based on current speed
       etaHours,
+      speedCalculation: {
+        hoursOfData: hoursOfData.toFixed(1),
+        pagesInWindow,
+        windowStart: speedCalcWindow.toISOString(),
+        isFullFiveHours: hoursOfData >= 5
+      },
       cycleInfo: {
         number: siteState.current_cycle || 1,
         type: siteState.is_first_cycle ? 'Discovery' : 'Maintenance',
