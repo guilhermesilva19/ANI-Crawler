@@ -91,11 +91,12 @@ export async function GET(
     const hasNextPage = page < totalPages;
     const hasPrevPage = page > 1;
     
-    // Get status counts for filter badges
+    // Get status counts for filter badges (CONSISTENT with status route)
     const statusCounts = await Promise.all([
       urlStates.countDocuments({ site_id: dbSiteId }), // total
       urlStates.countDocuments({ site_id: dbSiteId, status: 'visited' }), // visited
       urlStates.countDocuments({ site_id: dbSiteId, status: 'remaining' }), // remaining
+      urlStates.countDocuments({ site_id: dbSiteId, status: 'in_progress' }), // in_progress
       urlStates.countDocuments({ 
         site_id: dbSiteId, 
         'status_info.status': { $in: [404, 410] },
@@ -131,9 +132,10 @@ export async function GET(
         total: statusCounts[0],
         visited: statusCounts[1],
         remaining: statusCounts[2],
-        deleted: statusCounts[3],
-        failed: statusCounts[4],
-        changed: statusCounts[5]
+        in_progress: statusCounts[3],
+        deleted: statusCounts[4],
+        failed: statusCounts[5],
+        changed: statusCounts[6]
       }
     };
     

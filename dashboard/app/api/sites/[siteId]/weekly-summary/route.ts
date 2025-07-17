@@ -15,31 +15,27 @@ export async function GET(
     const now = new Date();
     const aestNow = new Date(now.toLocaleString('en-US', { timeZone: 'Australia/Sydney' }));
     
-    // Get current totals from URL states (REAL data)
+    // Get current totals from URL states (CONSISTENT with status route)
     const urlStates = await getUrlStates();
-    const visitedCount = await urlStates.countDocuments({ 
-      site_id: dbSiteId, 
-      status: 'visited' 
-    });
-    const remainingCount = await urlStates.countDocuments({ 
-      site_id: dbSiteId, 
-      status: 'remaining' 
-    });
-    const deletedCount = await urlStates.countDocuments({ 
-      site_id: dbSiteId, 
-      'status_info.status': { $in: [404, 410] },
-      'status_info.error_count': { $gte: 2 }
-    });
-    const failedCount = await urlStates.countDocuments({ 
-      site_id: dbSiteId, 
-      'status_info.status': { $gte: 400 }
-    });
-    const changedCount = await urlStates.countDocuments({ 
-      site_id: dbSiteId, 
-      last_change: { $exists: true }
-    });
-    
-    const totalDiscoveredPages = visitedCount + remainingCount;
+    const [visitedCount, remainingCount, inProgressCount, totalDiscoveredPages, deletedCount, failedCount, changedCount] = await Promise.all([
+      urlStates.countDocuments({ site_id: dbSiteId, status: 'visited' }),
+      urlStates.countDocuments({ site_id: dbSiteId, status: 'remaining' }),
+      urlStates.countDocuments({ site_id: dbSiteId, status: 'in_progress' }),
+      urlStates.countDocuments({ site_id: dbSiteId }), // TOTAL discovered pages (all statuses)
+      urlStates.countDocuments({ 
+        site_id: dbSiteId, 
+        'status_info.status': { $in: [404, 410] },
+        'status_info.error_count': { $gte: 2 }
+      }),
+      urlStates.countDocuments({ 
+        site_id: dbSiteId, 
+        'status_info.status': { $gte: 400 }
+      }),
+      urlStates.countDocuments({ 
+        site_id: dbSiteId, 
+        last_change: { $exists: true }
+      })
+    ]);
     
         // Get last 7 days of activity data (AEST timezone)
     const sevenDaysAgo = new Date(aestNow);
