@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Filter, ExternalLink, Clock, AlertTriangle, Trash2, Edit, Eye, X } from 'lucide-react';
+import { Search, Filter, ExternalLink, Clock, AlertTriangle, Trash2, Edit, Eye, X, Zap } from 'lucide-react';
 
 interface URL {
   id: string;
@@ -33,6 +33,7 @@ interface StatusCounts {
   total: number;
   visited: number;
   remaining: number;
+  in_progress: number;
   deleted: number;
   failed: number;
   changed: number;
@@ -48,6 +49,7 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
     total: 0,
     visited: 0,
     remaining: 0,
+    in_progress: 0,
     deleted: 0,
     failed: 0,
     changed: 0
@@ -123,6 +125,7 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
     if (url.isFailed) return <AlertTriangle className="w-4 h-4 text-yellow-500" />;
     if (url.isChanged) return <Edit className="w-4 h-4 text-blue-500" />;
     if (url.status === 'visited') return <Clock className="w-4 h-4 text-green-500" />;
+    if (url.status === 'in_progress') return <Zap className="w-4 h-4 text-orange-500" />;
     return <Clock className="w-4 h-4 text-gray-500" />;
   };
 
@@ -131,6 +134,7 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
     if (url.isFailed) return 'Failed';
     if (url.isChanged) return 'Changed';
     if (url.status === 'visited') return 'Visited';
+    if (url.status === 'in_progress') return 'In Progress';
     return 'Pending';
   };
 
@@ -139,6 +143,7 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
     if (url.isFailed) return 'text-yellow-500 bg-yellow-500/10';
     if (url.isChanged) return 'text-blue-500 bg-blue-500/10';
     if (url.status === 'visited') return 'text-green-500 bg-green-500/10';
+    if (url.status === 'in_progress') return 'text-orange-500 bg-orange-500/10';
     return 'text-gray-500 bg-gray-500/10';
   };
 
@@ -253,6 +258,16 @@ export default function URLBrowser({ siteId }: URLBrowserProps) {
             }`}
           >
             Pending ({statusCounts.remaining.toLocaleString()})
+          </button>
+          <button
+            onClick={() => handleFilterChange('status', 'in_progress')}
+            className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+              filters.status === 'in_progress'
+                ? 'bg-orange-600 text-white border-orange-600'
+                : 'bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700'
+            }`}
+          >
+            In Progress ({statusCounts.in_progress.toLocaleString()})
           </button>
           <button
             onClick={() => handleFilterChange('status', 'deleted')}
