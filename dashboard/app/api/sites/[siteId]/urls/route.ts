@@ -37,7 +37,7 @@ export async function GET(
     } else if (status === 'in_progress') {
       query.status = 'in_progress';
     } else if (status === 'deleted') {
-      query['status_info.status'] = { $in: [404, 410] };
+      query['status_info.status'] = { $gte: 400 };
       query['status_info.error_count'] = { $gte: 2 };
     } else if (status === 'failed') {
       query['status_info.status'] = { $gte: 400 };
@@ -101,7 +101,7 @@ export async function GET(
       urlStates.countDocuments({ site_id: dbSiteId, status: 'in_progress' }), // in_progress
       urlStates.countDocuments({ 
         site_id: dbSiteId, 
-        'status_info.status': { $in: [404, 410] },
+        'status_info.status': { $gte: 400 },
         'status_info.error_count': { $gte: 2 }
       }), // deleted
       urlStates.countDocuments({ 
