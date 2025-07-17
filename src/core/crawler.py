@@ -100,6 +100,9 @@ class Crawler:
                 page_type = "deleted"
                 crawl_time = time.time() - start_time
                 self.state_manager.record_page_crawl(url, crawl_time, page_type)
+                
+                # CRITICAL FIX: Mark as visited to prevent duplicate processing in same cycle
+                self.state_manager.add_visited_url(url)
                 return  # Don't process further
             
             if not soup:
@@ -110,6 +113,9 @@ class Crawler:
                 page_type = "failed"
                 crawl_time = time.time() - start_time
                 self.state_manager.record_page_crawl(url, crawl_time, page_type)
+                
+                # CRITICAL FIX: Mark as visited to prevent duplicate processing in same cycle
+                self.state_manager.add_visited_url(url)
                 return
 
             # Intelligent file type categorization - only monitor availability for non-HTML content
