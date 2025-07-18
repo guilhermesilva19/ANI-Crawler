@@ -29,14 +29,14 @@ NEXT_CRAWL_FILE = "next_crawl.pkl"
 SCANNED_PAGES_FILE = "scanned_pages.txt"
 
 # Base URL Configuration
-BASE_URL = "https://www.health.gov.au"
+BASE_URL = "https://treasury.gov.au"
 
 # URLs to exclude from crawling
 EXCLUDE_PREFIXES = [
-    "https://www.health.gov.au/newsroom",
-    "https://ministers.health.gov.au/clare",
-    "https://www.health.gov.au/media",
-    "https://www.health.gov.au/news"
+    "https://treasury.gov.au/media",
+    "https://treasury.gov.au/news",
+    "https://treasury.gov.au/media",
+    "https://treasury.gov.au/news"
     
 ]
 
@@ -57,10 +57,10 @@ CHROME_OPTIONS = {
 
 # Target URLs
 TARGET_URLS = [
-    "https://www.health.gov.au/",
+    "https://treasury.gov.au/",
 ] 
 
 
 MONGODB_URI = os.getenv('MONGODB_URI')  # mongodb+srv://username:password@cluster.mongodb.net/
-SITE_ID = os.getenv('SITE_ID', 'health_gov_au')  # Unique identifier for this site
-SITE_NAME = os.getenv('SITE_NAME', 'Department of Health')  # Human-readable site name
+SITE_ID = os.getenv('SITE_ID', 'treasury_gov_au')  # Unique identifier for this site
+SITE_NAME = os.getenv('SITE_NAME', 'Department of Treasury')  # Human-readable site name
