@@ -34,7 +34,8 @@ BASE_URL = "https://www.education.gov.au"
 # URLs to exclude from crawling
 EXCLUDE_PREFIXES = [
     "https://www.education.gov.au/newsroom",
-    "https://ministers.education.gov.au/clare"
+    "https://ministers.education.gov.au/clare",
+    "https://www.education.gov.au/news"
 ]
 
 
