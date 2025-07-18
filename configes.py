@@ -1,4 +1,4 @@
-#health.gov.au
+#education.gov.au
 '''import os
 from dotenv import load_dotenv
 

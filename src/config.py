@@ -29,15 +29,13 @@ NEXT_CRAWL_FILE = "next_crawl.pkl"
 SCANNED_PAGES_FILE = "scanned_pages.txt"
 
 # Base URL Configuration
-BASE_URL = "https://ndis.gov.au"
+BASE_URL = "https://www.education.gov.au"
 
 # URLs to exclude from crawling
 EXCLUDE_PREFIXES = [
-    "https://ndis.gov.au/media",
-    "https://ndis.gov.au/news",
-    "https://ndis.gov.au/media",
-    "https://ndis.gov.au/news"
-    
+    "https://www.education.gov.au/newsroom",
+    "https://ministers.education.gov.au/clare",
+    "https://www.education.gov.au/news"
 ]
 
 
@@ -57,10 +55,10 @@ CHROME_OPTIONS = {
 
 # Target URLs
 TARGET_URLS = [
-    "https://ndis.gov.au/",
+    "https://www.education.gov.au/",
 ] 
 
 
 MONGODB_URI = os.getenv('MONGODB_URI')  # mongodb+srv://username:password@cluster.mongodb.net/
-SITE_ID = os.getenv('SITE_ID', 'ndis_gov_au')  # Unique identifier for this site
-SITE_NAME = os.getenv('SITE_NAME', 'National Disability Insurance Agency')  # Human-readable site name
+SITE_ID = os.getenv('SITE_ID', 'education_gov_au')  # Unique identifier for this site
+SITE_NAME = os.getenv('SITE_NAME', 'Department of Education')  # Human-readable site name
