@@ -15,7 +15,8 @@ from src.services.sheets_service import SheetsService
 from src.services.scheduler_service import SchedulerService
 from src.utils.content_comparison import compare_content, extract_links
 from src.utils.mongo_state_adapter import MongoStateAdapter
-from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID, EXCLUDE_PREFIXES
+from src.utils.html_page_filter import HTMLPageFilter
+from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID, EXCLUDE_PREFIXES, HTML_ONLY_MODE
 
 __all__ = ['Crawler']
 
@@ -29,6 +30,10 @@ class Crawler:
         if not self.drive_service.service:
             raise Exception("Failed to initialize Google Drive service - check credentials")
         self.slack_service = SlackService()
+        
+        # Initialize HTML page filter
+        self.html_filter = HTMLPageFilter()
+        print(f"🎯 HTML-only filtering: {'ENABLED' if HTML_ONLY_MODE else 'DISABLED'}")
         
         # Initialize Google Sheets service for logging
         try:
@@ -71,7 +76,7 @@ class Crawler:
     def process_page(self, url: str) -> None:
         """Process a single page: fetch, compare, and store changes."""
         start_time = time.time()
-        page_type = "normal"
+        page_type = "webpage"  # Default type for HTML pages
         
         # Create fresh browser instance for this page to prevent degradation
         page_browser = BrowserService(self.proxy_options)
@@ -118,13 +123,22 @@ class Crawler:
                 self.state_manager.add_visited_url(url)
                 return
 
-            # Intelligent file type categorization - only monitor availability for non-HTML content
-            file_type = self._categorize_file_type(url)
-            if file_type != "webpage":
-                print(f"\n{file_type.title()} available: {url}")
+            # Categorize page type for compatibility
+            page_type = "webpage" if self.html_filter.is_html_page(url) else "document"
+            
+            # Apply HTML-only filtering if enabled
+            if HTML_ONLY_MODE and page_type == "document":
+                reason = self.html_filter.get_non_html_reason(url)
+                print(f"\n🚫 Non-HTML content completely skipped: {url} ({reason})")
+                # COMPLETELY SKIP - no state updates, no metrics, no processing
+                return
+            
+            # Handle non-HTML content when HTML_ONLY_MODE is disabled
+            if page_type == "document":
+                print(f"\n📄 Document detected: {url}")
                 self.state_manager.add_visited_url(url)
                 crawl_time = time.time() - start_time
-                self.state_manager.record_page_crawl(url, crawl_time, file_type)
+                self.state_manager.record_page_crawl(url, crawl_time, "document")
                 return
 
             # Generate filenames and prepare safe filename for Drive
@@ -282,18 +296,32 @@ class Crawler:
             self.drive_service.upload_file(filename, html_folder_id)
             os.remove(filename)
 
-            # Extract new links to crawl
-            new_links = extract_links(url, soup, CHECK_PREFIX)
-            self.state_manager.add_new_urls(new_links)
+            # Extract new links and apply filtering based on mode
+            all_new_links = extract_links(url, soup, CHECK_PREFIX)
+            
+            if HTML_ONLY_MODE:
+                # Filter to only HTML pages
+                html_links, non_html_links = self.html_filter.filter_html_urls(all_new_links)
+                self.state_manager.add_new_urls(html_links)
+                
+                # Log filtering stats if there were non-HTML links
+                if non_html_links:
+                    print(f"🚫 Filtered out {len(non_html_links)} non-HTML URLs, added {len(html_links)} HTML pages")
+            else:
+                # Include all links (original behavior)
+                self.state_manager.add_new_urls(all_new_links)
+                print(f"📄 Added {len(all_new_links)} URLs (all file types included)")
 
             # Update state
             self.state_manager.add_visited_url(url)
             self.state_manager.log_scanned_page(url)
             
-            # Record performance metrics
+            # Record performance metrics with correct page type
             crawl_time = time.time() - start_time
             change_details_for_perf = change_details if 'change_details' in locals() else None
-            self.state_manager.record_page_crawl(url, crawl_time, page_type, change_details_for_perf)
+            # Use specific type if it was a new/changed page, otherwise default to webpage
+            final_page_type = page_type if page_type in ["new", "changed"] else "webpage"
+            self.state_manager.record_page_crawl(url, crawl_time, final_page_type, change_details_for_perf)
 
         except Exception as e:
             # Rollback any newly created folders to prevent orphans
@@ -401,42 +429,4 @@ class Crawler:
             if hasattr(self, 'scheduler_service') and self.scheduler_service:
                 self.scheduler_service.stop_scheduler()
 
-    def _categorize_file_type(self, url: str) -> str:
-        """Intelligently categorize file types based on URL and content patterns."""
-        url_lower = url.lower()
-        
-        # Check for download/file patterns first (most common on education.gov.au)
-        if '/download/' in url_lower or '/downloads/' in url_lower or '/files/' in url_lower or '/attachments/' in url_lower:
-            return "document"  # Keep consistent with existing 11k URLs
-        
-        # Document files - handle both .extension and /extension patterns
-        elif (url_lower.endswith(('.pdf', '/pdf')) or '.pdf' in url_lower):
-            return "document"  # Keep consistent - don't create new "pdf" category
-        elif (url_lower.endswith(('.doc', '.docx', '/doc', '/docx')) or any(ext in url_lower for ext in ['.doc', '.docx'])):
-            return "document"
-        elif (url_lower.endswith(('.xls', '.xlsx', '.csv')) or any(ext in url_lower for ext in ['.xls', '.xlsx', '.csv'])):
-            return "document"
-        elif (url_lower.endswith(('.ppt', '.pptx')) or any(ext in url_lower for ext in ['.ppt', '.pptx'])):
-            return "document"
-        elif (url_lower.endswith(('.txt', '.rtf')) or any(ext in url_lower for ext in ['.txt', '.rtf'])):
-            return "document"
-        
-        # Media files - also keep as document for consistency
-        elif (url_lower.endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp')) or 
-              any(ext in url_lower for ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.svg', '.webp'])):
-            return "document"
-        elif (url_lower.endswith(('.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm')) or
-              any(ext in url_lower for ext in ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm'])):
-            return "document"
-        elif (url_lower.endswith(('.mp3', '.wav', '.flac', '.aac', '.ogg')) or
-              any(ext in url_lower for ext in ['.mp3', '.wav', '.flac', '.aac', '.ogg'])):
-            return "document"
-        
-        # Archive files
-        elif (url_lower.endswith(('.zip', '.rar', '.7z', '.tar', '.gz', '.bz2')) or
-              any(ext in url_lower for ext in ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'])):
-            return "document"
-        
-        # Default to webpage for HTML content
-        else:
-            return "webpage"
+
