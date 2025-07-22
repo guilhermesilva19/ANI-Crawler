@@ -39,6 +39,7 @@ EXCLUDE_PREFIXES = [
     "https://treasury.gov.au/news"
     
 ]
+HTML_ONLY_MODE = os.getenv('HTML_ONLY_MODE', 'true').lower() == 'true'  # Set to 'false' to include all file types
 
 
 # Browser Configuration
