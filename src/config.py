@@ -38,9 +38,6 @@ EXCLUDE_PREFIXES = [
     "https://www.education.gov.au/news"
 ]
 
-# HTML-only filtering configuration
-HTML_ONLY_MODE = os.getenv('HTML_ONLY_MODE', 'true').lower() == 'true'  # Set to 'false' to include all file types
-
 
 # Browser Configuration
 CHROME_OPTIONS = {

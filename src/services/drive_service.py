@@ -53,10 +53,20 @@ class DriveService:
         except Exception as e:
             print(f"\nError initializing Drive service: {e}")
             return None
+        
 
+        
     def upload_file(self, file_path: str, folder_id: str) -> Optional[str]:
+        
         """Upload a file to Google Drive and return its ID."""
         try:
+            #  Check if file is empty
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                if not content.strip():
+                    print(f"Skipped uploading empty file, This is a Empty File: {file_path}")
+                    return None
+
             mt = mimetypes.guess_type(file_path)
             mime_type = mt[0]
 
@@ -75,6 +85,8 @@ class DriveService:
         except Exception as e:
             print(f"\nError uploading file: {e}")
             return None
+
+
 
     def find_file(self, file_name: str, folder_id: str) -> Optional[str]:
         """Find a file in a specific folder and return its ID."""
