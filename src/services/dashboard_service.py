@@ -75,13 +75,22 @@ class DashboardService:
         progress_bar = self.generate_progress_bar(stats['progress_percent'])
         
         # Calculate time estimates
+        eta_mode = stats.get('eta_mode', 'cycle_completion')
         if stats['eta_datetime']:
             eta_text = self.format_eta(stats['eta_datetime'])
-            time_remaining = (stats['eta_datetime'] - datetime.now()).total_seconds() / 3600
-            time_remaining_text = self.format_time_duration(time_remaining)
+            time_remaining_hours = (stats['eta_datetime'] - datetime.now()).total_seconds() / 3600
+            time_remaining_text = self.format_time_duration(max(time_remaining_hours, 0))
         else:
             eta_text = "Calculating..."
             time_remaining_text = "Unknown"
+
+        # Labels depend on whether we're estimating completion or next cycle start
+        if eta_mode == 'next_cycle_start':
+            eta_label = "Next crawl start"
+            time_label = "Until next crawl"
+        else:
+            eta_label = "ETA"
+            time_label = "Remaining"
         
         # Get milestone information
         milestone_info = self.get_milestone_info(stats['progress_percent'])
@@ -109,7 +118,9 @@ class DashboardService:
             },
             'timing': {
                 'eta': eta_text,
-                'time_remaining': time_remaining_text
+                'eta_label': eta_label,
+                'time_remaining': time_remaining_text,
+                'time_label': time_label
             },
             'cycle': {
                 'type': cycle_type,
@@ -184,7 +195,7 @@ class DashboardService:
                 },
                 {
                     "type": "mrkdwn", 
-                    "text": f"*🎯 TIMING*\n• ETA: {timing['eta']}\n• Remaining: {timing['time_remaining']}"
+                    "text": f"*🎯 TIMING*\n• {timing['eta_label']}: {timing['eta']}\n• {timing['time_label']}: {timing['time_remaining']}"
                 }
             ]
         })

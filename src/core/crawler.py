@@ -20,6 +20,7 @@ from src.services.sheets_service import SheetsService
 from src.services.scheduler_service import SchedulerService
 from src.utils.content_comparison import compare_content, extract_links
 from src.utils.mongo_state_adapter import MongoStateAdapter
+from src.utils.memory_monitor import MemoryMonitor
 from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID, EXCLUDE_PREFIXES
 
 __all__ = ['Crawler']
@@ -34,6 +35,10 @@ class Crawler:
         if not self.drive_service.service:
             raise Exception("Failed to initialize Google Drive service - check credentials")
         self.slack_service = SlackService()
+        
+        # Initialize memory monitor
+        self.memory_monitor = MemoryMonitor()
+        print(f"🧠 Memory monitoring enabled: {self.memory_monitor.log_file}")
         
         # Initialize Google Sheets service for logging
         try:
@@ -77,6 +82,12 @@ class Crawler:
         """Process a single page: fetch, compare, and store changes."""
         start_time = time.time()
         page_type = "normal"
+        
+        # Check memory status before processing
+        memory_status = self.memory_monitor.check_memory_status()
+        if memory_status['critical']:
+            self.slack_service.send_error(f"CRITICAL MEMORY USAGE: {memory_status['warning']}")
+            print(f"🚨 {memory_status['warning']}")
         
         # Create fresh browser instance for this page to prevent degradation
         page_browser = BrowserService(self.proxy_options)
@@ -328,7 +339,24 @@ class Crawler:
             # Record performance for errored page
             crawl_time = time.time() - start_time
             self.state_manager.record_page_crawl(url, crawl_time, "failed")
+            
+            # Store error for logging in finally block
+            error = str(e)
         finally:
+            # Log URL scraping with memory usage
+            crawl_time = time.time() - start_time
+            memory_usage = self.memory_monitor.get_memory_usage()
+            
+            if 'error' in locals():
+                self.memory_monitor.log_url_scraped(url, "failed", error, memory_usage)
+            else:
+                self.memory_monitor.log_url_scraped(url, "success", None, memory_usage)
+            
+            # Force memory cleanup after each URL
+            cleanup_result = self.memory_monitor.force_memory_cleanup()
+            if cleanup_result['memory_freed_mb'] > 10:  # Log if we freed more than 10MB
+                print(f"🧹 Memory cleanup: Freed {cleanup_result['memory_freed_mb']:.2f}MB")
+            
             # cleanup the page-specific browser instance
             if 'page_browser' in locals():
                 page_browser.quit()
@@ -419,6 +447,9 @@ class Crawler:
                     print(f"\n📊 Progress: {stats['completed_pages']}/{stats['total_known_pages']} ({stats['progress_percent']}%) - {stats['pages_per_hour']:.0f} pages/hour")
                     if stats['eta_datetime']:
                         print(f"⏰ ETA: {stats['eta_datetime'].strftime('%I:%M %p today' if stats['eta_datetime'].date() == datetime.now().date() else '%b %d at %I:%M %p')}")
+                    
+                    # Log memory summary every 10 pages
+                    self.memory_monitor.log_memory_summary()
                 
                 # Rescue stuck URLs every 50 pages (roughly every 25-30 minutes)
                 if pages_processed_this_session % 50 == 0:
@@ -429,8 +460,17 @@ class Crawler:
         except KeyboardInterrupt:
             print("\nCrawling interrupted by user.")
         except Exception as e:
-            self.slack_service.send_error(f"Critical crawler error: {str(e)}")
+            # Log memory status before sending error
+            memory_summary = self.memory_monitor.get_memory_summary()
+            error_msg = f"Critical crawler error: {str(e)}"
+            if 'max_memory_mb' in memory_summary:
+                error_msg += f" | Max memory used: {memory_summary['max_memory_mb']:.2f}MB"
+            
+            self.slack_service.send_error(error_msg)
             print(f"\nCritical error: {e}")
+            
+            # Log final memory summary
+            self.memory_monitor.log_memory_summary()
         finally:
             # Cleanup services
             if hasattr(self, 'scheduler_service') and self.scheduler_service:
