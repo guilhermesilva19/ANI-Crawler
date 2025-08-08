@@ -1,5 +1,6 @@
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload # type: ignore
 
 import io
@@ -57,31 +58,58 @@ class DriveService:
 
         
     def upload_file(self, file_path: str, folder_id: str) -> Optional[str]:
-        
-        """Upload a file to Google Drive and return its ID."""
+        """Upload (or update) a file to Google Drive and return its ID.
+
+        Fixes:
+        - Avoid reading files as UTF-8 (binary like PNG causes decode errors)
+        - Detect empty files via size, not content
+        - Update existing file with same name to avoid duplicates/quota growth
+        - Handle Drive quota errors explicitly
+        """
         try:
-            #  Check if file is empty
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                if not content.strip():
-                    print(f"Skipped uploading empty file, This is a Empty File: {file_path}")
-                    return None
+            # Validate file exists and non-empty (binary-safe)
+            if not os.path.isfile(file_path):
+                print(f"Skipped upload, file not found: {file_path}")
+                return None
+            if os.path.getsize(file_path) == 0:
+                print(f"Skipped uploading empty file: {file_path}")
+                return None
 
+            # Guess MIME type, default to binary stream
             mt = mimetypes.guess_type(file_path)
-            mime_type = mt[0]
+            mime_type = mt[0] or 'application/octet-stream'
 
+            file_name = os.path.basename(file_path)
+            media = MediaFileUpload(file_path, mimetype=mime_type, resumable=False)
+
+            # If a file with the same name exists in the folder, update it to avoid duplicates
+            existing_id = self.find_file(file_name, folder_id)
+            if existing_id:
+                updated = self.service.files().update(
+                    fileId=existing_id,
+                    media_body=media,
+                    fields='id'
+                ).execute()
+                return updated.get('id')
+
+            # Otherwise create a new file
             file_metadata = {
-                'name': os.path.basename(file_path),
+                'name': file_name,
                 'parents': [folder_id]
             }
-
-            media = MediaFileUpload(file_path, mimetype=mime_type)
             uploaded = self.service.files().create(
                 body=file_metadata,
                 media_body=media,
                 fields='id'
             ).execute()
             return uploaded.get('id')
+        except HttpError as he:
+            # Surface quota issues clearly
+            if 'storageQuotaExceeded' in str(he):
+                print("\nError uploading file: Drive storage quota exceeded. Consider cleanup or using update strategy.")
+            else:
+                print(f"\nError uploading file: {he}")
+            return None
         except Exception as e:
             print(f"\nError uploading file: {e}")
             return None
