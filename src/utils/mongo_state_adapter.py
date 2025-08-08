@@ -541,22 +541,37 @@ class MongoStateAdapter:
         recent_performance_entries = self.performance_history[-20:] if self.performance_history else []
         average_processing_time = sum(entry['crawl_time'] for entry in recent_performance_entries) / len(recent_performance_entries) if recent_performance_entries else 15.0
         
-        # Calculate estimated time to completion using interval-based throughput analysis
+        # Calculate ETA
+        # 1) If there are remaining pages, ETA = time until cycle completion
+        # 2) If no remaining pages, ETA = time until next cycle can start based on recrawl policy
+        eta_datetime = None
+        eta_mode = "unknown"
+        now = datetime.now()
+
         if remaining_pages > 0:
+            eta_mode = "cycle_completion"
             # Primary method: Use interval-based throughput calculation
             interval_based_throughput = self._calculate_throughput_from_intervals()
-            
             if interval_based_throughput > 0:
-                # Calculate completion time based on actual processing intervals
                 estimated_completion_hours = remaining_pages / interval_based_throughput
-                eta_datetime = datetime.now() + timedelta(hours=estimated_completion_hours)
+                eta_datetime = now + timedelta(hours=estimated_completion_hours)
             else:
                 # Fallback method: Use individual page processing times
-                # Note: Uses remaining pages count for accurate estimation
                 estimated_completion_seconds = remaining_pages * average_processing_time
-                eta_datetime = datetime.now() + timedelta(seconds=estimated_completion_seconds)
+                eta_datetime = now + timedelta(seconds=estimated_completion_seconds)
         else:
-            eta_datetime = None
+            # No remaining pages -> estimate when the next crawl will begin again
+            # Mongo adapter recrawls pages last crawled >= recrawl_days ago (default 3 days)
+            recrawl_days = 3
+            if self.next_crawl:
+                earliest_next_time = min(last_crawled + timedelta(days=recrawl_days) for last_crawled in self.next_crawl.values())
+                # If already due, use now; otherwise the future time
+                eta_datetime = earliest_next_time if earliest_next_time > now else now
+                eta_mode = "next_cycle_start"
+            else:
+                # If we have no history, we cannot determine next cycle start
+                eta_datetime = None
+                eta_mode = "next_cycle_start"
         
         # Calculate current processing rate using interval analysis when available
         interval_based_throughput = self._calculate_throughput_from_intervals()
@@ -585,6 +600,7 @@ class MongoStateAdapter:
             'avg_crawl_time_seconds': round(average_processing_time, 1),
             'pages_per_hour': round(pages_per_hour, 0),
             'eta_datetime': eta_datetime,
+            'eta_mode': eta_mode,  # either "cycle_completion" or "next_cycle_start"
             'cycle_number': self.current_cycle,
             'is_first_cycle': self.is_first_cycle,
             'cycle_duration_days': cycle_duration.days,
