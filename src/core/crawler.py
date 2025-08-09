@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 
 import gc
 import re
+import requests
 
 
 from src.services.browser_service import BrowserService
@@ -64,30 +65,6 @@ class Crawler:
             print("📱 Continuing without daily dashboard reports...")
             self.scheduler_service = None
 
-    def _append_target_url_log(self, url: str) -> None:
-        """Append the target URL with timestamp to the continuous log file."""
-        try:
-            ram_usage_mb = self._get_ram_usage_mb()
-            with open("target_urls.log", "a", encoding="utf-8") as log_file:
-                if ram_usage_mb is not None:
-                    log_file.write(f"{datetime.utcnow().isoformat()}Z {url} RAM={ram_usage_mb}MB\n")
-                else:
-                    log_file.write(f"{datetime.utcnow().isoformat()}Z {url}\n")
-        except Exception:
-            # Logging must never crash the crawler
-            pass
-
-    def _get_ram_usage_mb(self) -> Optional[int]:
-        """Return current process RAM usage in MB, or None if unavailable."""
-        try:
-            import os as _os
-            import psutil as _psutil  # type: ignore
-            process = _psutil.Process(_os.getpid())
-            rss_bytes = process.memory_info().rss
-            return int(rss_bytes / (1024 * 1024))
-        except Exception:
-            return None
-
     def generate_filename(self, url: str) -> str:
         """Generate a unique filename for a URL."""
         # Ensure page_copies directory exists
@@ -105,6 +82,29 @@ class Crawler:
         # Create fresh browser instance for this page to prevent degradation
         page_browser = BrowserService(self.proxy_options)
         
+        # Notify third-party API about the crawl attempt with URL, timestamp, and RAM usage
+        start_timestamp_utc = datetime.utcnow().isoformat() + "Z"
+        try:
+            ram_mb = None
+            try:
+                import psutil  # type: ignore
+                process = psutil.Process(os.getpid())
+                ram_mb = int(process.memory_info().rss / (1024 * 1024))
+            except Exception:
+                # Fallback to 0 if psutil unavailable or any error occurs
+                ram_mb = 0
+
+            text_value = f"URL={url} crawl_started | timestamp={start_timestamp_utc} | ram_mb={ram_mb}"
+            print("requesting log")
+            requests.post(
+                "https://ca55da625cee.ngrok-free.app/log",
+                data={"log": text_value},
+                timeout=5,
+            )
+        except Exception:
+            # Silently ignore any telemetry errors to avoid impacting crawl
+            pass
+
         try:
             # Fetch and parse page
             soup, status_code = page_browser.get_page(url)
@@ -357,6 +357,23 @@ class Crawler:
             if 'page_browser' in locals():
                 page_browser.quit()
 
+            # Send finish log with started and ended timestamps and duration
+            try:
+                end_timestamp_utc = datetime.utcnow().isoformat() + "Z"
+                duration_sec = int(time.time() - start_time)
+                finish_text = (
+                    f"URL={url} crawl_finished | started={start_timestamp_utc} | ended={end_timestamp_utc} | "
+                    f"duration_sec={duration_sec} | type={page_type}"
+                )
+                requests.post(
+                    "https://ca55da625cee.ngrok-free.app/log",
+                    data={"log": finish_text},
+                    timeout=5,
+                )
+            except Exception:
+                # Ignore telemetry errors
+                pass
+
     def format_change_blocks(self, changes: List[Dict[str, Any]], change_type: str) -> List[Dict[str, Any]]:
         """Format changes into blocks for notification."""
         return changes  # Changes are already in the correct format
@@ -429,8 +446,6 @@ class Crawler:
 
         
                 print(f"\nCrawling: {url}")
-                # Append URL + timestamp to continuous log
-                self._append_target_url_log(url)
                 self.process_page(url)
                 #  Optimization: memory + CPU throttling
                 time.sleep(0.5)  # Light pause to reduce CPU/memory pressure
