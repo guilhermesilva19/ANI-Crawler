@@ -11,7 +11,6 @@ from bs4 import BeautifulSoup
 
 import gc
 import re
-import requests
 
 
 from src.services.browser_service import BrowserService
@@ -82,29 +81,6 @@ class Crawler:
         # Create fresh browser instance for this page to prevent degradation
         page_browser = BrowserService(self.proxy_options)
         
-        # Notify third-party API about the crawl attempt with URL, timestamp, and RAM usage
-        start_timestamp_utc = datetime.utcnow().isoformat() + "Z"
-        try:
-            ram_mb = None
-            try:
-                import psutil  # type: ignore
-                process = psutil.Process(os.getpid())
-                ram_mb = int(process.memory_info().rss / (1024 * 1024))
-            except Exception:
-                # Fallback to 0 if psutil unavailable or any error occurs
-                ram_mb = 0
-
-            text_value = f"URL={url} crawl_started | timestamp={start_timestamp_utc} | ram_mb={ram_mb}"
-            print("requesting log")
-            requests.post(
-                "https://ca55da625cee.ngrok-free.app/log",
-                data={"log": text_value},
-                timeout=5,
-            )
-        except Exception:
-            # Silently ignore any telemetry errors to avoid impacting crawl
-            pass
-
         try:
             # Fetch and parse page
             soup, status_code = page_browser.get_page(url)
@@ -185,8 +161,10 @@ class Crawler:
             if screenshot_status == 'new':
                 created_folder_ids.append(screenshot_folder_id)
 
-            # PHASE 3: Defer screenshot upload until we know if page is new/changed
-            screenshot_url = None
+            # PHASE 3: Upload files to Drive (now that folders exist and local files are ready)
+            if screenshot_path:
+                screenshot_url = self.drive_service.upload_file(screenshot_path, screenshot_folder_id)
+                os.remove(screenshot_path)
 
             # Store Drive folder URLs in database (for both discovery AND recrawl)
             folder_ids = {
@@ -203,7 +181,6 @@ class Crawler:
             # Check if this is a new page
             is_new_page = not old_file_id and not self.state_manager.was_visited(url)
             
-            has_changes = False
             if is_new_page:
                 page_type = "new"
                 # Send new page notification using format_change_message
@@ -216,7 +193,6 @@ class Crawler:
                     is_new_page=True
                 )
                 self.slack_service.send_message(blocks)
-                has_changes = True
                 
                 # Log to Google Sheets
                 if self.sheets_service:
@@ -261,7 +237,6 @@ class Crawler:
                 # If there are any changes, send notification
                 if any([added_text, deleted_text, changed_text]) or any(links_changes.values()):
                     page_type = "changed"
-                    has_changes = True
                     
                     # Prepare detailed change information for storage
                     change_details = {
@@ -306,21 +281,10 @@ class Crawler:
                 # Clean up old files
                 os.remove(old_file)
 
-            # Upload new version and rename old version ONLY when page is new or changed
-            if has_changes:
-                if new_file_id:
-                    self.drive_service.rename_file(new_file_id, os.path.basename(old_file))
-                self.drive_service.upload_file(filename, html_folder_id)
-                # Upload screenshot only if new/changed
-                if screenshot_path:
-                    self.drive_service.upload_file(screenshot_path, screenshot_folder_id)
-                # Cleanup local screenshot after upload
-                if screenshot_path and os.path.exists(screenshot_path):
-                    os.remove(screenshot_path)
-            else:
-                # No changes: skip Drive uploads and remove local temp files
-                if screenshot_path and os.path.exists(screenshot_path):
-                    os.remove(screenshot_path)
+            # Upload new version and rename old version
+            if new_file_id:
+                self.drive_service.rename_file(new_file_id, os.path.basename(old_file))
+            self.drive_service.upload_file(filename, html_folder_id)
             os.remove(filename)
 
             # Extract new links to crawl
@@ -356,23 +320,6 @@ class Crawler:
             # cleanup the page-specific browser instance
             if 'page_browser' in locals():
                 page_browser.quit()
-
-            # Send finish log with started and ended timestamps and duration
-            try:
-                end_timestamp_utc = datetime.utcnow().isoformat() + "Z"
-                duration_sec = int(time.time() - start_time)
-                finish_text = (
-                    f"URL={url} crawl_finished | started={start_timestamp_utc} | ended={end_timestamp_utc} | "
-                    f"duration_sec={duration_sec} | type={page_type}"
-                )
-                requests.post(
-                    "https://ca55da625cee.ngrok-free.app/log",
-                    data={"log": finish_text},
-                    timeout=5,
-                )
-            except Exception:
-                # Ignore telemetry errors
-                pass
 
     def format_change_blocks(self, changes: List[Dict[str, Any]], change_type: str) -> List[Dict[str, Any]]:
         """Format changes into blocks for notification."""
