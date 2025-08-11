@@ -199,28 +199,58 @@ class Crawler:
             filename = self.generate_filename(url)
             old_file = filename + ".old"
             safe_filename = page_browser._get_safe_filename(url)
-            
+
+            print(f"🔍 Debug: Generated filename: {filename}")
+            print(f"🔍 Debug: Safe filename: {safe_filename}")
+
             # Track created folders for rollback if needed
             created_folder_ids = []
 
             # PHASE 1: Complete all risky local operations BEFORE creating Drive folders
             # Save current version locally first
-            with open(filename, "w", encoding="utf-8") as f:
-                f.write(soup.prettify())
-            
-            # Verify file was written correctly and has content
-            if not os.path.exists(filename) or os.path.getsize(filename) == 0:
-                raise Exception(f"Failed to save page content to {filename}")
-            
-            # Additional content validation - ensure HTML has meaningful content
-            with open(filename, "r", encoding="utf-8") as f:
-                content = f.read()
-                if len(content.strip()) < 100:  # Too short to be meaningful HTML
-                    raise Exception(f"File content too short ({len(content)} chars) - likely empty or corrupted")
-                if "<html" not in content.lower() and "<!doctype" not in content.lower():
-                    raise Exception(f"File doesn't appear to be valid HTML content")
-            
-            print(f"📄 Page content saved: {filename} ({len(content)} chars)")
+            try:
+                # Validate soup object before writing
+                if not soup or not hasattr(soup, 'prettify'):
+                    raise Exception(f"Invalid soup object for {url}")
+                
+                # Get the prettified content
+                prettified_content = soup.prettify()
+                if not prettified_content or len(prettified_content.strip()) < 100:
+                    raise Exception(f"Generated content too short ({len(prettified_content)} chars) - likely empty")
+                
+                # Write content with explicit encoding and flush
+                with open(filename, "w", encoding="utf-8") as f:
+                    f.write(prettified_content)
+                    f.flush()  # Ensure content is written to disk
+                    os.fsync(f.fileno())  # Force sync to disk
+                
+                # Verify file was written correctly and has content
+                if not os.path.exists(filename):
+                    raise Exception(f"File was not created: {filename}")
+                
+                file_size = os.path.getsize(filename)
+                if file_size == 0:
+                    raise Exception(f"File was created but is empty: {filename}")
+                
+                # Additional content validation - ensure HTML has meaningful content
+                with open(filename, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    if len(content.strip()) < 100:  # Too short to be meaningful HTML
+                        raise Exception(f"File content too short ({len(content)} chars) - likely empty or corrupted")
+                    if "<html" not in content.lower() and "<!doctype" not in content.lower():
+                        raise Exception(f"File doesn't appear to be valid HTML content")
+                
+                print(f"📄 Page content saved: {filename} ({len(content)} chars)")
+                
+            except Exception as file_error:
+                # Clean up any partially created file
+                if os.path.exists(filename):
+                    try:
+                        os.remove(filename)
+                        print(f"🗑️  Cleaned up failed file: {filename}")
+                    except:
+                        pass
+                raise Exception(f"Failed to save page content to {filename}: {file_error}")
             
             # Take screenshot locally (most likely to fail)
             screenshot_path, _ = page_browser.save_screenshot(url)
@@ -395,6 +425,10 @@ class Crawler:
             upload_success = False
             if has_changes and self.drive_service:
                 try:
+                    # Final validation before upload
+                    if not os.path.exists(filename) or os.path.getsize(filename) == 0:
+                        raise Exception(f"HTML file validation failed before upload: {filename}")
+                    
                     if new_file_id:
                         self.drive_service.rename_file(new_file_id, os.path.basename(old_file))
                     
@@ -404,10 +438,16 @@ class Crawler:
                         raise Exception(f"Failed to upload HTML file: {filename}")
                     
                     # Upload screenshot only if new/changed and available
-                    if screenshot_path:
-                        screenshot_upload_result = self.drive_service.upload_file(screenshot_path, screenshot_folder_id)
-                        if not screenshot_upload_result:
-                            print(f"⚠️  Screenshot upload failed: {screenshot_path}")
+                    if screenshot_path and os.path.exists(screenshot_path):
+                        screenshot_size = os.path.getsize(screenshot_path)
+                        if screenshot_size > 0:
+                            screenshot_upload_result = self.drive_service.upload_file(screenshot_path, screenshot_folder_id)
+                            if not screenshot_upload_result:
+                                print(f"⚠️  Screenshot upload failed: {screenshot_path}")
+                        else:
+                            print(f"⚠️  Skipping empty screenshot: {screenshot_path} ({screenshot_size} bytes)")
+                    else:
+                        print(f"⚠️  No valid screenshot to upload: {screenshot_path}")
                     
                     upload_success = True
                     print(f"✅ Files uploaded successfully to Drive")

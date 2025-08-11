@@ -50,27 +50,12 @@ class BrowserService:
         if CHROME_OPTIONS.get('user_agent'):
             chrome_options.add_argument(f"user-agent={CHROME_OPTIONS['user_agent']}")
         
-        # Memory optimization options for Render deployment
+        # Additional Docker-specific Chrome options
         chrome_options.add_argument("--disable-background-timer-throttling")
         chrome_options.add_argument("--disable-backgrounding-occluded-windows")
         chrome_options.add_argument("--disable-renderer-backgrounding")
-        chrome_options.add_argument("--disable-features=TranslateUI,VizDisplayCompositor")
+        chrome_options.add_argument("--disable-features=TranslateUI")
         chrome_options.add_argument("--disable-ipc-flooding-protection")
-        chrome_options.add_argument("--memory-pressure-off")
-        chrome_options.add_argument("--max_old_space_size=256")
-        chrome_options.add_argument("--disable-web-security")
-        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
-        chrome_options.add_argument("--disable-background-networking")
-        chrome_options.add_argument("--disable-sync")
-        chrome_options.add_argument("--metrics-recording-only")
-        chrome_options.add_argument("--no-first-run")
-        chrome_options.add_argument("--safebrowsing-disable-auto-update")
-        chrome_options.add_argument("--disable-default-apps")
-        chrome_options.add_argument("--disable-hang-monitor")
-        chrome_options.add_argument("--disable-prompt-on-repost")
-        chrome_options.add_argument("--disable-client-side-phishing-detection")
-        chrome_options.add_argument("--disable-component-update")
-        chrome_options.add_argument("--disable-domain-reliability")
         chrome_options.add_argument("--remote-debugging-port=9222")
 
         try:
@@ -91,8 +76,7 @@ class BrowserService:
                 options=chrome_options,
                 seleniumwire_options=seleniumwire_options if self.proxy_options else None
             )
-            self.driver.set_script_timeout(30)  # Reduced timeout
-            self.driver.set_page_load_timeout(60)  # Add page load timeout
+            self.driver.set_script_timeout(1000)
         except Exception as e:
             print(f"\nError setting up WebDriver: {e}")
             raise
@@ -146,37 +130,69 @@ class BrowserService:
             print(f"\nError scrolling page: {e}")
 
     def save_screenshot(self, page_url: str) -> Tuple[str, str]:
-        """Capture and save a full-page screenshot with memory optimization."""
+        """Capture and save a full-page screenshot."""
+        screenshot_path = ""
+        safe_filename = ""
+        
         try:
-            # Simplified scrolling - just scroll to bottom once
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
+            # Validate driver is ready
+            if not self.driver:
+                raise Exception("WebDriver not initialized")
+            
+            # Scroll to capture full page
+            self.scroll_full_page()
             self.driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            time.sleep(2)
 
             # Create screenshot directory if it doesn't exist
             os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+            print("make dir")
 
             # Generate filename from URL
             safe_filename = self._get_safe_filename(page_url)
             screenshot_path = os.path.join(SCREENSHOT_DIR, f"{safe_filename}.png")
+            print("screenshot path")
 
-            # Use smaller window size for memory efficiency
-            self.driver.set_window_size(1280, 720)
-            time.sleep(1)
+            # Set window size to capture full page
+            total_height = self.driver.execute_script("return document.body.scrollHeight")
+            print("total height ==>", total_height)
+            
+            # Validate total_height is reasonable
+            if total_height <= 0 or total_height > 10000:  # Sanity check
+                print(f"⚠️  Invalid page height: {total_height}, using default")
+                total_height = 1080
+            
+            self.driver.set_window_size(1920, total_height)
+            print("-----")
+            time.sleep(2)
 
             # Take screenshot
+            print("before screenshot")
             self.driver.save_screenshot(screenshot_path)
             
-            # Verify file was created and has content
-            if os.path.exists(screenshot_path) and os.path.getsize(screenshot_path) > 1000:  # At least 1KB
-                return screenshot_path, safe_filename
-            else:
-                print(f"⚠️  Screenshot file empty or too small: {screenshot_path}")
-                return "", ""
+            # Validate screenshot was created and has content
+            if not os.path.exists(screenshot_path):
+                raise Exception(f"Screenshot file was not created: {screenshot_path}")
+            
+            file_size = os.path.getsize(screenshot_path)
+            if file_size == 0:
+                raise Exception(f"Screenshot file is empty: {screenshot_path}")
+            
+            if file_size < 1000:  # PNG files should be at least 1KB
+                print(f"⚠️  Screenshot file is very small ({file_size} bytes) - might be corrupted")
+            
+            print(f"✅ Screenshot saved successfully: {screenshot_path} ({file_size} bytes)")
+            return screenshot_path, safe_filename
             
         except Exception as e:
             print(f"\nError saving screenshot: {e}")
+            # Clean up any partially created file
+            if screenshot_path and os.path.exists(screenshot_path):
+                try:
+                    os.remove(screenshot_path)
+                    print(f"🗑️  Cleaned up failed screenshot: {screenshot_path}")
+                except:
+                    pass
             return "", ""
 
     def _get_safe_filename(self, url: str) -> str:
