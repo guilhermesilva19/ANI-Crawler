@@ -11,22 +11,6 @@ def main():
     """Main function to run the ANI system."""
     try:
         crawler = Crawler()
-        # Send a one-time server started log to remote endpoint
-        try:
-            from datetime import datetime
-            import socket
-            import requests
-
-            timestamp_utc = datetime.utcnow().isoformat() + "Z"
-            host_name = socket.gethostname()
-            requests.post(
-                "https://ca55da625cee.ngrok-free.app/log",
-                data={"log": f"SERVER_STARTED | timestamp={timestamp_utc} | host={host_name}"},
-                timeout=5,
-            )
-        except Exception:
-            # Ignore telemetry errors so startup isn't impacted
-            pass
         crawler.run()
     except Exception as e:
         # Try to send error notification if possible
