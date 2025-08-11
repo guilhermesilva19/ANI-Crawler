@@ -1,8 +1,6 @@
 import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
+# Environment variables are loaded in main.py and configes.py
+# No need to duplicate load_dotenv() here
 
 # Proxy Configuration
 PROXY_URL = os.getenv('PROXY_URL')
