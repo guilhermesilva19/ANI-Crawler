@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 
 import gc
 import re
+import requests
 
 
 from src.services.browser_service import BrowserService
@@ -19,7 +20,7 @@ from src.services.slack_service import SlackService
 from src.services.sheets_service import SheetsService
 from src.services.scheduler_service import SchedulerService
 from src.utils.content_comparison import compare_content, extract_links
-from src.utils.mongo_state_adapter import MongoStateAdapter
+from src.utils.state_manager import StateManager
 from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID, EXCLUDE_PREFIXES
 
 __all__ = ['Crawler']
@@ -29,11 +30,34 @@ class Crawler:
     """Main crawler class that handles webpage monitoring and change detection."""
     
     def __init__(self):
-        self.state_manager = MongoStateAdapter()
-        self.drive_service = DriveService()
-        if not self.drive_service.service:
-            raise Exception("Failed to initialize Google Drive service - check credentials")
-        self.slack_service = SlackService()
+        self.state_manager = StateManager()
+        
+        # Memory optimization settings for Render deployment
+        self.max_memory_mb = int(os.getenv('MAX_MEMORY_MB', '512'))  # Default 512MB limit
+        self.memory_check_interval = 50  # Check memory every 50 pages
+        self.gc_threshold = 0.8  # Force garbage collection at 80% memory usage
+        
+        # Initialize Google Drive service (optional)
+        try:
+            self.drive_service = DriveService()
+            if not self.drive_service.service:
+                print("⚠️  Google Drive service not available - continuing without file uploads")
+                self.drive_service = None
+            else:
+                print("✅ Google Drive service initialized successfully")
+        except Exception as e:
+            print(f"⚠️  Google Drive service failed to initialize: {e}")
+            print("📁 Continuing without file uploads...")
+            self.drive_service = None
+        
+        # Initialize Slack service (optional)
+        try:
+            self.slack_service = SlackService()
+            print("✅ Slack service initialized successfully")
+        except Exception as e:
+            print(f"⚠️  Slack service failed to initialize: {e}")
+            print("💬 Continuing without Slack notifications...")
+            self.slack_service = None
         
         # Initialize Google Sheets service for logging
         try:
@@ -81,6 +105,29 @@ class Crawler:
         # Create fresh browser instance for this page to prevent degradation
         page_browser = BrowserService(self.proxy_options)
         
+        # Notify third-party API about the crawl attempt with URL, timestamp, and RAM usage
+        start_timestamp_utc = datetime.utcnow().isoformat() + "Z"
+        try:
+            ram_mb = None
+            try:
+                import psutil  # type: ignore
+                process = psutil.Process(os.getpid())
+                ram_mb = int(process.memory_info().rss / (1024 * 1024))
+            except Exception:
+                # Fallback to 0 if psutil unavailable or any error occurs
+                ram_mb = 0
+
+            text_value = f"URL={url} crawl_started | timestamp={start_timestamp_utc} | ram_mb={ram_mb}"
+            print("requesting log")
+            requests.post(
+                "https://ca55da625cee.ngrok-free.app/log",
+                data={"log": text_value},
+                timeout=5,
+            )
+        except Exception:
+            # Silently ignore any telemetry errors to avoid impacting crawl
+            pass
+
         try:
             # Fetch and parse page
             soup, status_code = page_browser.get_page(url)
@@ -93,7 +140,8 @@ class Crawler:
                 last_success = url_status.get('last_success')
                 
                 # Send deleted page alert to Slack
-                self.slack_service.send_deleted_page_alert(url, status_code, last_success)
+                if self.slack_service:
+                    self.slack_service.send_deleted_page_alert(url, status_code, last_success)
                 
                 # Log to Google Sheets
                 if self.sheets_service:
@@ -132,6 +180,21 @@ class Crawler:
                 self.state_manager.record_page_crawl(url, crawl_time, file_type)
                 return
 
+            # Validate soup object before processing
+            if not soup or not hasattr(soup, 'prettify'):
+                print(f"❌ Invalid soup object for {url} - skipping")
+                self.state_manager.add_visited_url(url)
+                crawl_time = time.time() - start_time
+                self.state_manager.record_page_crawl(url, crawl_time, "failed")
+                return
+            
+            # Check if soup has meaningful content
+            soup_text = soup.get_text(strip=True)
+            if len(soup_text) < 50:  # Very short content might be an error page
+                print(f"⚠️  Very short content for {url} ({len(soup_text)} chars) - might be error page")
+            
+            print(f"📄 Processing page: {url} (content length: {len(soup_text)} chars)")
+            
             # Generate filenames and prepare safe filename for Drive
             filename = self.generate_filename(url)
             old_file = filename + ".old"
@@ -144,64 +207,109 @@ class Crawler:
             # Save current version locally first
             with open(filename, "w", encoding="utf-8") as f:
                 f.write(soup.prettify())
-
+            
+            # Verify file was written correctly and has content
+            if not os.path.exists(filename) or os.path.getsize(filename) == 0:
+                raise Exception(f"Failed to save page content to {filename}")
+            
+            # Additional content validation - ensure HTML has meaningful content
+            with open(filename, "r", encoding="utf-8") as f:
+                content = f.read()
+                if len(content.strip()) < 100:  # Too short to be meaningful HTML
+                    raise Exception(f"File content too short ({len(content)} chars) - likely empty or corrupted")
+                if "<html" not in content.lower() and "<!doctype" not in content.lower():
+                    raise Exception(f"File doesn't appear to be valid HTML content")
+            
+            print(f"📄 Page content saved: {filename} ({len(content)} chars)")
+            
             # Take screenshot locally (most likely to fail)
             screenshot_path, _ = page_browser.save_screenshot(url)
+            
+            # Verify screenshot was created
+            if screenshot_path and (not os.path.exists(screenshot_path) or os.path.getsize(screenshot_path) == 0):
+                print(f"⚠️  Screenshot failed or empty: {screenshot_path}")
+                screenshot_path = None
 
             # PHASE 2: Only create Drive folders after local operations succeed
-            folder_id, folder_status = self.drive_service.get_or_create_folder(safe_filename, TOP_PARENT_ID)
-            if folder_status == 'new':
-                created_folder_ids.append(folder_id)
-                
-            html_folder_id, html_status = self.drive_service.get_or_create_folder("HTML", folder_id)
-            if html_status == 'new':
-                created_folder_ids.append(html_folder_id)
-                
-            screenshot_folder_id, screenshot_status = self.drive_service.get_or_create_folder("SCREENSHOT", folder_id)
-            if screenshot_status == 'new':
-                created_folder_ids.append(screenshot_folder_id)
+            if self.drive_service:
+                folder_id, folder_status = self.drive_service.get_or_create_folder(safe_filename, TOP_PARENT_ID)
+                if folder_status == 'new':
+                    created_folder_ids.append(folder_id)
+                    
+                html_folder_id, html_status = self.drive_service.get_or_create_folder("HTML", folder_id)
+                if html_status == 'new':
+                    created_folder_ids.append(html_folder_id)
+                    
+                screenshot_folder_id, screenshot_status = self.drive_service.get_or_create_folder("SCREENSHOT", folder_id)
+                if screenshot_status == 'new':
+                    created_folder_ids.append(screenshot_folder_id)
 
-            # PHASE 3: Upload files to Drive (now that folders exist and local files are ready)
-            if screenshot_path:
-                screenshot_url = self.drive_service.upload_file(screenshot_path, screenshot_folder_id)
-                os.remove(screenshot_path)
+                # PHASE 3: Defer screenshot upload until we know if page is new/changed
+                screenshot_url = None
 
-            # Store Drive folder URLs in database (for both discovery AND recrawl)
-            folder_ids = {
-                'main_folder_id': folder_id,
-                'html_folder_id': html_folder_id,
-                'screenshot_folder_id': screenshot_folder_id
-            }
-            self.state_manager.update_drive_folders(url, folder_ids)
+                # Store Drive folder URLs in database (for both discovery AND recrawl)
+                folder_ids = {
+                    'main_folder_id': folder_id,
+                    'html_folder_id': html_folder_id,
+                    'screenshot_folder_id': screenshot_folder_id
+                }
+                self.state_manager.update_drive_folders(url, folder_ids)
 
-            # Handle file versions in Drive
-            new_file_id = self.drive_service.find_file(os.path.basename(filename), html_folder_id)
-            old_file_id = self.drive_service.find_file(os.path.basename(old_file), html_folder_id)
+                # Handle file versions in Drive
+                new_file_id = self.drive_service.find_file(os.path.basename(filename), html_folder_id)
+                old_file_id = self.drive_service.find_file(os.path.basename(old_file), html_folder_id)
+            else:
+                # Basic mode: use local storage only
+                folder_id = html_folder_id = screenshot_folder_id = None
+                new_file_id = old_file_id = None
+                screenshot_url = None
+                folder_ids = {}
+                print(f"📁 Drive service not available - using local storage only")
 
             # Check if this is a new page
             is_new_page = not old_file_id and not self.state_manager.was_visited(url)
             
+            has_changes = False
             if is_new_page:
                 page_type = "new"
                 # Send new page notification using format_change_message
-                blocks = self.slack_service.format_change_message(
-                    url,
-                    [], [], [],  # No content changes for new page
-                    {'added_links': set(), 'removed_links': set(), 'added_pdfs': set(), 'removed_pdfs': set()},
-                    f"https://drive.google.com/drive/folders/{screenshot_folder_id}",
-                    f"https://drive.google.com/drive/folders/{html_folder_id}",
-                    is_new_page=True
-                )
-                self.slack_service.send_message(blocks)
+                if self.drive_service:
+                    blocks = self.slack_service.format_change_message(
+                        url,
+                        [], [], [],  # No content changes for new page
+                        {'added_links': set(), 'removed_links': set(), 'added_pdfs': set(), 'removed_pdfs': set()},
+                        f"https://drive.google.com/drive/folders/{screenshot_folder_id}",
+                        f"https://drive.google.com/drive/folders/{html_folder_id}",
+                        is_new_page=True
+                    )
+                else:
+                    blocks = self.slack_service.format_change_message(
+                        url,
+                        [], [], [],  # No content changes for new page
+                        {'added_links': set(), 'removed_links': set(), 'added_pdfs': set(), 'removed_pdfs': set()},
+                        "Local storage only",
+                        "Local storage only",
+                        is_new_page=True
+                    )
+                if self.slack_service:
+                    self.slack_service.send_message(blocks)
+                has_changes = True
                 
                 # Log to Google Sheets
                 if self.sheets_service:
-                    self.sheets_service.log_new_page_alert(
-                        url,
-                        f"https://drive.google.com/drive/folders/{screenshot_folder_id}",
-                        f"https://drive.google.com/drive/folders/{html_folder_id}"
-                    )
-            elif old_file_id:
+                    if self.drive_service:
+                        self.sheets_service.log_new_page_alert(
+                            url,
+                            f"https://drive.google.com/drive/folders/{screenshot_folder_id}",
+                            f"https://drive.google.com/drive/folders/{html_folder_id}"
+                        )
+                    else:
+                        self.sheets_service.log_new_page_alert(
+                            url,
+                            "Local storage only",
+                            "Local storage only"
+                        )
+            elif old_file_id and self.drive_service:
                 # Compare versions for existing page
                 self.drive_service.download_file(old_file_id, old_file)
                 with open(old_file, "r", encoding="utf-8") as f:
@@ -237,6 +345,7 @@ class Crawler:
                 # If there are any changes, send notification
                 if any([added_text, deleted_text, changed_text]) or any(links_changes.values()):
                     page_type = "changed"
+                    has_changes = True
                     
                     # Prepare detailed change information for storage
                     change_details = {
@@ -265,7 +374,8 @@ class Crawler:
                         f"https://drive.google.com/drive/folders/{html_folder_id}",
                         is_new_page=False
                     )
-                    self.slack_service.send_message(blocks)
+                    if self.slack_service:
+                        self.slack_service.send_message(blocks)
                     
                     # Log to Google Sheets
                     if self.sheets_service:
@@ -281,11 +391,45 @@ class Crawler:
                 # Clean up old files
                 os.remove(old_file)
 
-            # Upload new version and rename old version
-            if new_file_id:
-                self.drive_service.rename_file(new_file_id, os.path.basename(old_file))
-            self.drive_service.upload_file(filename, html_folder_id)
-            os.remove(filename)
+            # Upload new version and rename old version ONLY when page is new or changed
+            upload_success = False
+            if has_changes and self.drive_service:
+                try:
+                    if new_file_id:
+                        self.drive_service.rename_file(new_file_id, os.path.basename(old_file))
+                    
+                    # Upload HTML file with validation
+                    html_upload_result = self.drive_service.upload_file(filename, html_folder_id)
+                    if not html_upload_result:
+                        raise Exception(f"Failed to upload HTML file: {filename}")
+                    
+                    # Upload screenshot only if new/changed and available
+                    if screenshot_path:
+                        screenshot_upload_result = self.drive_service.upload_file(screenshot_path, screenshot_folder_id)
+                        if not screenshot_upload_result:
+                            print(f"⚠️  Screenshot upload failed: {screenshot_path}")
+                    
+                    upload_success = True
+                    print(f"✅ Files uploaded successfully to Drive")
+                    
+                except Exception as upload_error:
+                    print(f"❌ Upload failed: {upload_error}")
+                    # Don't delete local files if upload failed
+                    upload_success = False
+            
+            # Clean up local files ONLY after successful upload
+            if upload_success:
+                if screenshot_path and os.path.exists(screenshot_path):
+                    os.remove(screenshot_path)
+                    print(f"🗑️  Local screenshot cleaned up: {screenshot_path}")
+                os.remove(filename)
+                print(f"🗑️  Local HTML file cleaned up: {filename}")
+            else:
+                # Keep files for debugging if upload failed
+                print(f"📁 Keeping local files for debugging (upload failed)")
+                if screenshot_path and os.path.exists(screenshot_path):
+                    print(f"   📸 Screenshot: {screenshot_path}")
+                print(f"   📄 HTML: {filename}")
 
             # Extract new links to crawl
             new_links = extract_links(url, soup, CHECK_PREFIX)
@@ -302,7 +446,7 @@ class Crawler:
 
         except Exception as e:
             # Rollback any newly created folders to prevent orphans
-            if 'created_folder_ids' in locals():
+            if 'created_folder_ids' in locals() and self.drive_service:
                 for folder_id in created_folder_ids:
                     try:
                         self.drive_service.delete_folder(folder_id)
@@ -310,7 +454,8 @@ class Crawler:
                     except Exception as cleanup_error:
                         print(f"⚠️  Could not clean up folder {folder_id}: {cleanup_error}")
             
-            self.slack_service.send_error(str(e), url)
+            if self.slack_service:
+                self.slack_service.send_error(str(e), url)
             print(f"\nError processing page {url}: {e}")
             
             # Record performance for errored page
@@ -320,6 +465,23 @@ class Crawler:
             # cleanup the page-specific browser instance
             if 'page_browser' in locals():
                 page_browser.quit()
+
+            # Send finish log with started and ended timestamps and duration
+            try:
+                end_timestamp_utc = datetime.utcnow().isoformat() + "Z"
+                duration_sec = int(time.time() - start_time)
+                finish_text = (
+                    f"URL={url} crawl_finished | started={start_timestamp_utc} | ended={end_timestamp_utc} | "
+                    f"duration_sec={duration_sec} | type={page_type}"
+                )
+                requests.post(
+                    "https://ca55da625cee.ngrok-free.app/log",
+                    data={"log": finish_text},
+                    timeout=5,
+                )
+            except Exception:
+                # Ignore telemetry errors
+                pass
 
     def format_change_blocks(self, changes: List[Dict[str, Any]], change_type: str) -> List[Dict[str, Any]]:
         """Format changes into blocks for notification."""
@@ -408,6 +570,10 @@ class Crawler:
                     if stats['eta_datetime']:
                         print(f"⏰ ETA: {stats['eta_datetime'].strftime('%I:%M %p today' if stats['eta_datetime'].date() == datetime.now().date() else '%b %d at %I:%M %p')}")
                 
+                # Memory optimization for Render deployment
+                if pages_processed_this_session % self.memory_check_interval == 0:
+                    self._check_and_optimize_memory()
+                
                 # Rescue stuck URLs every 50 pages (roughly every 25-30 minutes)
                 if pages_processed_this_session % 50 == 0:
                     self.state_manager.rescue_stuck_urls(stuck_minutes=60)
@@ -417,7 +583,8 @@ class Crawler:
         except KeyboardInterrupt:
             print("\nCrawling interrupted by user.")
         except Exception as e:
-            self.slack_service.send_error(f"Critical crawler error: {str(e)}")
+            if self.slack_service:
+                self.slack_service.send_error(f"Critical crawler error: {str(e)}")
             print(f"\nCritical error: {e}")
         finally:
             # Cleanup services
@@ -463,3 +630,34 @@ class Crawler:
         # Default to webpage for HTML content
         else:
             return "webpage"
+
+    def _check_and_optimize_memory(self) -> None:
+        """Monitor and optimize memory usage to prevent Render failures."""
+        try:
+            import psutil
+            process = psutil.Process(os.getpid())
+            memory_mb = process.memory_info().rss / (1024 * 1024)
+            memory_percent = memory_mb / self.max_memory_mb
+            
+            print(f"🧠 Memory: {memory_mb:.1f}MB / {self.max_memory_mb}MB ({memory_percent:.1%})")
+            
+            # Force garbage collection if memory usage is high
+            if memory_percent > self.gc_threshold:
+                print("🔄 High memory usage detected - forcing garbage collection...")
+                gc.collect()
+                
+                # Check memory after GC
+                memory_mb_after = process.memory_info().rss / (1024 * 1024)
+                freed_mb = memory_mb - memory_mb_after
+                print(f"✅ Freed {freed_mb:.1f}MB of memory")
+                
+                # If still high, consider more aggressive cleanup
+                if memory_mb_after / self.max_memory_mb > 0.9:
+                    print("⚠️  Critical memory usage - clearing performance history...")
+                    self.state_manager._clear_old_performance_data()
+                    
+        except ImportError:
+            # psutil not available, skip memory monitoring
+            pass
+        except Exception as e:
+            print(f"⚠️  Memory monitoring error: {e}")

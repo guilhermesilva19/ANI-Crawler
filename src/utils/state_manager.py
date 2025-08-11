@@ -316,32 +316,56 @@ class StateManager:
         recent_performance_entries = self.performance_history[-20:] if self.performance_history else []
         average_processing_time = sum(entry['crawl_time'] for entry in recent_performance_entries) / len(recent_performance_entries) if recent_performance_entries else 15.0
         
-        # Calculate ETA
-        # 1) If there are remaining pages, ETA = time until cycle completion
-        # 2) If no remaining pages, ETA = time until next crawl cycle based on recrawl policy
+        # Calculate ETA with improved accuracy
         now = datetime.now()
         eta_datetime = None
         eta_mode = "unknown"
         
         if remaining_pages > 0:
             eta_mode = "cycle_completion"
+            # Use interval-based throughput for more accurate estimation
             interval_based_throughput = self._calculate_throughput_from_intervals()
+            
             if interval_based_throughput > 0:
+                # More accurate: use actual recent performance
                 estimated_completion_hours = remaining_pages / interval_based_throughput
                 eta_datetime = now + timedelta(hours=estimated_completion_hours)
+                print(f"📊 ETA based on recent performance: {estimated_completion_hours:.1f} hours")
             else:
+                # Fallback: use average processing time
                 estimated_completion_seconds = remaining_pages * average_processing_time
                 eta_datetime = now + timedelta(seconds=estimated_completion_seconds)
+                print(f"📊 ETA based on average time: {estimated_completion_seconds/3600:.1f} hours")
         else:
-            # File-based fallback uses next_crawl timestamps and default recrawl_days = 3
-            recrawl_days = 3
+            # No remaining pages - calculate next cycle start
+            eta_mode = "next_cycle_start"
+            recrawl_days = 3  # Default recrawl interval
+            
             if self.next_crawl:
-                earliest_next_time = min(last_crawled + timedelta(days=recrawl_days) for last_crawled in self.next_crawl.values())
-                eta_datetime = earliest_next_time if earliest_next_time > now else now
-                eta_mode = "next_cycle_start"
+                # Find earliest time when any page should be recrawled
+                earliest_next_time = None
+                for last_crawled in self.next_crawl.values():
+                    next_crawl_time = last_crawled + timedelta(days=recrawl_days)
+                    if earliest_next_time is None or next_crawl_time < earliest_next_time:
+                        earliest_next_time = next_crawl_time
+                
+                if earliest_next_time and earliest_next_time > now:
+                    eta_datetime = earliest_next_time
+                    print(f"🔄 Next cycle starts in: {earliest_next_time - now}")
+                else:
+                    # All pages are ready for recrawl now
+                    eta_datetime = now
+                    print("🔄 All pages ready for recrawl - starting new cycle")
             else:
-                eta_datetime = None
-                eta_mode = "next_cycle_start"
+                # No crawl history, estimate based on cycle start time
+                if self.cycle_start_time:
+                    cycle_duration = now - self.cycle_start_time
+                    estimated_next_cycle = now + cycle_duration
+                    eta_datetime = estimated_next_cycle
+                    print(f"🔄 Estimated next cycle: {estimated_next_cycle}")
+                else:
+                    eta_datetime = now + timedelta(days=recrawl_days)
+                    print(f"🔄 Default next cycle: {eta_datetime}")
         
         # Calculate current processing rate using interval analysis when available
         interval_based_throughput = self._calculate_throughput_from_intervals()
@@ -425,5 +449,29 @@ class StateManager:
         except Exception as e:
             print(f"Error calculating pages per hour: {e}")
             return 0.0
+
+    def _clear_old_performance_data(self) -> None:
+        """Clear old performance data to free memory."""
+        try:
+            # Keep only last 1000 entries to prevent memory bloat
+            if len(self.performance_history) > 1000:
+                old_count = len(self.performance_history)
+                self.performance_history = self.performance_history[-1000:]
+                freed_count = old_count - len(self.performance_history)
+                print(f"🧹 Freed memory: removed {freed_count} old performance entries")
+                
+            # Keep only last 30 days of daily stats
+            thirty_days_ago = datetime.now() - timedelta(days=30)
+            old_dates = [date for date in self.daily_stats.keys() 
+                        if datetime.strptime(date, "%Y-%m-%d").date() < thirty_days_ago.date()]
+            
+            for old_date in old_dates:
+                del self.daily_stats[old_date]
+            
+            if old_dates:
+                print(f"🧹 Freed memory: removed {len(old_dates)} old daily stats")
+                
+        except Exception as e:
+            print(f"Error clearing old data: {e}")
     
  

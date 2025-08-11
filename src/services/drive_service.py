@@ -6,7 +6,8 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload # type: ig
 import io
 import os
 import json
-from dotenv import load_dotenv
+# Environment variables are loaded in main.py and configes.py
+# No need to duplicate load_dotenv() here
 import mimetypes
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, Any, List
@@ -21,8 +22,6 @@ class DriveService:
     def _initialize_service(self):
         """Initialize and return the Google Drive service."""
         try:
-            load_dotenv()
-
             # Get service account info from environment variables
             service_account_info = {
                 "type": os.getenv("TYPE"),
@@ -65,16 +64,45 @@ class DriveService:
         - Detect empty files via size, not content
         - Update existing file with same name to avoid duplicates/quota growth
         - Handle Drive quota errors explicitly
+        - Enhanced validation to prevent blank file uploads
         """
         try:
-            # Validate file exists and non-empty (binary-safe)
-            if not os.path.isfile(file_path):
-                print(f"Skipped upload, file not found: {file_path}")
+            # Enhanced file validation
+            if not os.path.exists(file_path):
+                print(f"❌ Skipped upload, file not found: {file_path}")
                 return None
-            if os.path.getsize(file_path) == 0:
-                print(f"Skipped uploading empty file: {file_path}")
+                
+            file_size = os.path.getsize(file_path)
+            if file_size == 0:
+                print(f"❌ Skipped uploading empty file: {file_path}")
                 return None
-
+                
+            # Additional validation: check if file has meaningful content
+            if file_path.endswith('.html'):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read(1000)  # Read first 1000 chars
+                        if len(content.strip()) < 100:  # Too short to be meaningful
+                            print(f"❌ Skipped uploading file with insufficient content: {file_path}")
+                            return None
+                        
+                        # Additional HTML validation
+                        if "<html" not in content.lower() and "<!doctype" not in content.lower():
+                            print(f"❌ Skipped uploading non-HTML file: {file_path}")
+                            return None
+                        
+                        # Check for common error page indicators
+                        error_indicators = ["error", "not found", "404", "500", "access denied", "forbidden"]
+                        if any(indicator in content.lower() for indicator in error_indicators):
+                            print(f"⚠️  File appears to be an error page: {file_path}")
+                            # Still upload but log the warning
+                        
+                except Exception as e:
+                    print(f"❌ Error reading file content: {file_path} - {e}")
+                    return None
+            
+            print(f"📤 Uploading file: {file_path} ({file_size} bytes)")
+            
             # Guess MIME type, default to binary stream
             mt = mimetypes.guess_type(file_path)
             mime_type = mt[0] or 'application/octet-stream'
@@ -85,11 +113,13 @@ class DriveService:
             # If a file with the same name exists in the folder, update it to avoid duplicates
             existing_id = self.find_file(file_name, folder_id)
             if existing_id:
+                print(f"🔄 Updating existing file: {file_name}")
                 updated = self.service.files().update(
                     fileId=existing_id,
                     media_body=media,
                     fields='id'
                 ).execute()
+                print(f"✅ File updated successfully: {file_name}")
                 return updated.get('id')
 
             # Otherwise create a new file
@@ -102,16 +132,17 @@ class DriveService:
                 media_body=media,
                 fields='id'
             ).execute()
+            print(f"✅ File uploaded successfully: {file_name}")
             return uploaded.get('id')
         except HttpError as he:
             # Surface quota issues clearly
             if 'storageQuotaExceeded' in str(he):
-                print("\nError uploading file: Drive storage quota exceeded. Consider cleanup or using update strategy.")
+                print(f"\n❌ Error uploading file: Drive storage quota exceeded. Consider cleanup or using update strategy.")
             else:
-                print(f"\nError uploading file: {he}")
+                print(f"\n❌ Error uploading file: {he}")
             return None
         except Exception as e:
-            print(f"\nError uploading file: {e}")
+            print(f"\n❌ Error uploading file: {e}")
             return None
 
 
