@@ -61,8 +61,8 @@ class DriveService:
         return creds  
     def _authenticate(self):
         """Authenticate with Google Drive API using service account or OAuth 2.0."""
+        # First, try service account authentication (from .env file)
         try:
-            # First, try service account authentication (from .env file)
             service_account_info = {
                 "type": os.getenv('TYPE'),
                 "project_id": os.getenv('PROJECT_ID'),
@@ -210,10 +210,8 @@ class DriveService:
             return None
             
         except HttpError as e:
-            print(f"❌ Google Drive API error finding file: {e}")
             return None
         except Exception as e:
-            print(f"❌ Error finding file: {e}")
             return None
 
     def get_or_create_folder(self, folder_name: str, parent_folder_id: Optional[str] = None) -> Tuple[Optional[str], str]:
@@ -254,7 +252,6 @@ class DriveService:
             return folder_id, 'new'
             
         except HttpError as e:
-            print(f"❌ Google Drive API error creating folder: {e}")
             return None, 'error'
         except Exception as e:
             print(f"❌ Error creating folder: {e}")
