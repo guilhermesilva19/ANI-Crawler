@@ -47,7 +47,8 @@ class SheetsService:
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.getenv('CLIENT_EMAIL')}"
+                # "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.getenv('CLIENT_EMAIL')}",
+                "client_secret": os.getenv("CLIENT_SECRET")
             }
             
             credentials = Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
@@ -84,8 +85,8 @@ class SheetsService:
     def _find_spreadsheet_in_folder(self, name: str) -> Optional[Dict]:
         """Find spreadsheet by name in the TOP_PARENT_ID folder."""
         try:
-            query = f"name='{name}' and parents in '{TOP_PARENT_ID}' and mimeType='application/vnd.google-apps.spreadsheet'"
-            results = self.drive_service.files().list(q=query, fields="files(id, name)").execute()
+            query = f"name='{name}' and parents in '{TOP_PARENT_ID}' and mimeType='application/vnd.google-apps.spreadsheet and trashed = false'"
+            results = self.drive_service.files().list(q=query, fields="files(id, name)",supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
             files = results.get('files', [])
             return files[0] if files else None
         except Exception as e:
@@ -95,28 +96,21 @@ class SheetsService:
     def _create_new_spreadsheet(self, name: str) -> None:
         """Create new spreadsheet in the Drive folder."""
         try:
-            # Create spreadsheet
-            spreadsheet_body = {
-                'properties': {
-                    'title': name
-                }
+            file_metadata = {
+                'name': name,
+                'mimeType': 'application/vnd.google-apps.spreadsheet',
+                'parents': [TOP_PARENT_ID]
             }
             
-            spreadsheet = self.sheets_service.spreadsheets().create(body=spreadsheet_body).execute()
-            self.spreadsheet_id = spreadsheet['spreadsheetId']
+            file = self.drive_service.files().create(
+                body=file_metadata,
+                supportsAllDrives=True
+            ).execute()
+
+            self.spreadsheet_id = file.get('id')
             self.spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{self.spreadsheet_id}"
             
-            # Move to crawler folder
-            self.drive_service.files().update(
-                fileId=self.spreadsheet_id,
-                addParents=TOP_PARENT_ID,
-                removeParents='root',
-                fields='id, parents'
-            ).execute()
-            
             print(f"Created new alerts spreadsheet: {self.spreadsheet_url}")
-            print(f"Spreadsheet moved to crawler folder: {TOP_PARENT_ID}")
-            
         except Exception as e:
             print(f"Error creating spreadsheet: {e}")
             raise
