@@ -37,10 +37,32 @@ class DriveService:
         self.service = self._authenticate()
         print(f"✅ Google Drive service initialized with root folder: {self.root_folder_id}")
 
+    def get_credentials_with_refresh_token(self):
+        """Get credentials using the refresh token."""
+        creds = None
+        if os.path.exists(GOOGLE_DRIVE_TOKEN_FILE):
+            creds = Credentials.from_authorized_user_file(GOOGLE_DRIVE_TOKEN_FILE, SCOPES)
+            
+            if creds and creds.expired and creds.refresh_token:
+                print("🔄 Refreshing the access token using the refresh token...")
+                creds.refresh(Request())
+                
+                with open(GOOGLE_DRIVE_TOKEN_FILE, 'w') as token:
+                    token.write(creds.to_json())
+                print("✅ Access token refreshed and saved!")
+            
+            elif creds and creds.valid:
+                print("🔐 Using valid token")
+                return creds
+
+        if not creds or not creds.valid:
+            print("❌ No valid credentials found.")
+            return None
+        return creds  
     def _authenticate(self):
         """Authenticate with Google Drive API using service account or OAuth 2.0."""
-        # First, try service account authentication (from .env file)
         try:
+            # First, try service account authentication (from .env file)
             service_account_info = {
                 "type": os.getenv('TYPE'),
                 "project_id": os.getenv('PROJECT_ID'),
@@ -51,9 +73,12 @@ class DriveService:
                 "auth_uri": os.getenv('AUTH_URI'),
                 "token_uri": os.getenv('TOKEN_URI'),
                 "auth_provider_x509_cert_url": os.getenv('AUTH_PROVIDER_x509_CERT_URL'),
-                # "client_x509_cert_url": os.getenv('CLIENT_X509_CERT_URL')
                 "client_secret": os.getenv("CLIENT_SECRET")
             }
+            creds = self.get_credentials_with_refresh_token()
+            if creds and creds.valid:
+                print("🔐 Using existing refresh_token")
+                return build('drive', 'v3', credentials=creds)
             
             # Check if all required service account fields are present
             if all(service_account_info.values()):
@@ -63,51 +88,48 @@ class DriveService:
                 )
                 return build('drive', 'v3', credentials=credentials)
             else:
-                print("⚠️  Service account credentials incomplete, trying OAuth 2.0...")
+                print("⚠️ Service account credentials incomplete, trying OAuth 2.0...")
         except Exception as e:
             print(f"⚠️  Service account authentication failed: {e}")
             print("🔄 Falling back to OAuth 2.0...")
-        
-        # Fallback to OAuth 2.0 authentication
-        flow = InstalledAppFlow.from_client_secrets_file(GOOGLE_DRIVE_CREDENTIALS_FILE, SCOPES)
-        creds = flow.run_local_server(port=8080)
-        
-        # Check if token file exists
+
+        # Check if token file exists and is valid
+        creds = None
         if os.path.exists(GOOGLE_DRIVE_TOKEN_FILE):
             try:
                 creds = Credentials.from_authorized_user_file(GOOGLE_DRIVE_TOKEN_FILE, SCOPES)
-            except Exception as e:
-                print(f"⚠️  Error loading token file: {e}")
-                creds = None
-        # If no valid credentials, get new ones
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                except Exception as e:
-                    print(f"⚠️  Error refreshing token: {e}")
-                    creds = None
-            
-            if not creds:
-                if not os.path.exists(GOOGLE_DRIVE_CREDENTIALS_FILE):
-                    raise FileNotFoundError(
-                        f"OAuth credentials file '{GOOGLE_DRIVE_CREDENTIALS_FILE}' not found. "
-                        "Please download it from Google Cloud Console and place it in the project root, "
-                        "or ensure all service account environment variables are set in .env file."
-                    )
                 
-                flow = InstalledAppFlow.from_client_secrets_file(GOOGLE_DRIVE_CREDENTIALS_FILE, SCOPES)
-                creds = flow.run_local_server(port=8080)
-            
-            # Save credentials for next run
-            try:
-                with open(GOOGLE_DRIVE_TOKEN_FILE, 'w') as token:
-                    token.write(creds.to_json())
-                print("✅ New OAuth credentials saved to token file")
+                if creds and creds.valid:
+                    print("🔐 Using existing valid token")
+                    return build('drive', 'v3', credentials=creds)
+                elif creds and creds.expired and creds.refresh_token:
+                    # If expired, try refreshing the token
+                    creds.refresh(Request())
+                    # Save the refreshed token to the file
+                    with open(GOOGLE_DRIVE_TOKEN_FILE, 'w') as token:
+                        token.write(creds.to_json())
+                    print("✅ Refreshed and saved token")
+                    return build('drive', 'v3', credentials=creds)
             except Exception as e:
-                print(f"⚠️  Warning: Could not save credentials: {e}")
-        
+                print(f"⚠️ Error loading or refreshing token: {e}")
+                creds = None
+
+        # If no valid credentials, get new ones
+        if not creds:
+            print("🔄 No valid token found, authenticating via OAuth 2.0...")
+            flow = InstalledAppFlow.from_client_secrets_file(GOOGLE_DRIVE_CREDENTIALS_FILE, SCOPES)
+            flow.access_type = 'offline'
+            flow.include_granted_scopes = 'true'
+            creds = flow.run_local_server(port=8002)
+
+            # Save the credentials to a file for future use
+            with open(GOOGLE_DRIVE_TOKEN_FILE, 'w') as token:
+                token.write(creds.to_json())
+            print("✅ OAuth credentials saved to token file")
+        refresh_token = creds.refresh_token
+        print(f"Refresh Token: {refresh_token}")
         return build('drive', 'v3', credentials=creds)
+
 
     def upload_file(self, file_path: str, folder_id: str) -> Optional[str]:
         """Upload a file to Google Drive and return the file ID."""
