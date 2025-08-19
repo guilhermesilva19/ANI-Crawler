@@ -26,7 +26,7 @@ def test_sheets_service():
     print("=" * 50)
     
     # Check environment
-    required_vars = ['PRIVATE_KEY', 'CLIENT_EMAIL', 'FOLDER_PARENT_ID']
+    required_vars = ['CLIENT_EMAIL', 'FOLDER_PARENT_ID']
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
     if missing_vars:
