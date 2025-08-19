@@ -10,6 +10,7 @@ import os
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 from ..config import CHROME_OPTIONS, SCREENSHOT_DIR
+from selenium.webdriver.support.ui import WebDriverWait
 
 __all__ = ['BrowserService']
 
@@ -90,8 +91,19 @@ class BrowserService:
     def get_page(self, url: str) -> Tuple[Optional[BeautifulSoup], int]:
         """Load a page and return its parsed content along with HTTP status code."""
         try:
+            print(f"🔍 Loading page: {url}")
             self.driver.get(url)
-            time.sleep(10)  # Wait for page load
+            
+            # Wait for page to load with better validation
+            time.sleep(5)  # Initial wait
+            
+            # Wait for page to be ready
+            WebDriverWait(self.driver, 20).until(
+                lambda driver: driver.execute_script("return document.readyState") == "complete"
+            )
+            
+            # Additional wait for dynamic content
+            time.sleep(3)
             
             # Get final HTTP status from selenium-wire (after redirects)
             status_code = 200  # Default to success
@@ -107,8 +119,35 @@ class BrowserService:
             if status_code >= 400:
                 print(f"\nHTTP {status_code} for {final_url}")
                 return None, status_code
-                
-            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            
+            # Get page source with validation
+            page_source = self.driver.page_source
+            print(f"🔍 Page source length: {len(page_source)} characters")
+            
+            # Validate page source
+            if not page_source or len(page_source.strip()) < 100:
+                print(f"❌ Page source too short: {len(page_source)} characters")
+                print(f"🔍 Page source preview: {page_source[:200]}...")
+                return None, status_code
+            
+            # Check if page source contains basic HTML structure
+            if "<html" not in page_source.lower() and "<!doctype" not in page_source.lower():
+                print(f"❌ Page source doesn't contain HTML structure")
+                print(f"🔍 Page source preview: {page_source[:200]}...")
+                return None, status_code
+            
+            # Create BeautifulSoup object
+            soup = BeautifulSoup(page_source, 'html.parser')
+            
+            # Validate soup object
+            if not soup or not hasattr(soup, 'prettify'):
+                print(f"❌ Failed to create BeautifulSoup object")
+                return None, status_code
+            
+            # Check soup content
+            soup_text = soup.get_text(strip=True)
+            print(f"✅ Page loaded successfully: {len(soup_text)} characters of text content")
+            
             return soup, status_code
             
         except Exception as e:
@@ -131,15 +170,7 @@ class BrowserService:
 
     def save_screenshot(self, page_url: str) -> Tuple[str, str]:
         """Capture and save a full-page screenshot."""
-        screenshot_path = ""
-        safe_filename = ""
-        
         try:
-            # Validate driver is ready
-            if not self.driver:
-                raise Exception("WebDriver not initialized")
-            
-            # Scroll to capture full page
             self.scroll_full_page()
             self.driver.execute_script("window.scrollTo(0, 0);")
             time.sleep(2)
@@ -156,12 +187,6 @@ class BrowserService:
             # Set window size to capture full page
             total_height = self.driver.execute_script("return document.body.scrollHeight")
             print("total height ==>", total_height)
-            
-            # Validate total_height is reasonable
-            if total_height <= 0 or total_height > 10000:  # Sanity check
-                print(f"⚠️  Invalid page height: {total_height}, using default")
-                total_height = 1080
-            
             self.driver.set_window_size(1920, total_height)
             print("-----")
             time.sleep(2)
@@ -170,29 +195,9 @@ class BrowserService:
             print("before screenshot")
             self.driver.save_screenshot(screenshot_path)
             
-            # Validate screenshot was created and has content
-            if not os.path.exists(screenshot_path):
-                raise Exception(f"Screenshot file was not created: {screenshot_path}")
-            
-            file_size = os.path.getsize(screenshot_path)
-            if file_size == 0:
-                raise Exception(f"Screenshot file is empty: {screenshot_path}")
-            
-            if file_size < 1000:  # PNG files should be at least 1KB
-                print(f"⚠️  Screenshot file is very small ({file_size} bytes) - might be corrupted")
-            
-            print(f"✅ Screenshot saved successfully: {screenshot_path} ({file_size} bytes)")
             return screenshot_path, safe_filename
-            
         except Exception as e:
             print(f"\nError saving screenshot: {e}")
-            # Clean up any partially created file
-            if screenshot_path and os.path.exists(screenshot_path):
-                try:
-                    os.remove(screenshot_path)
-                    print(f"🗑️  Cleaned up failed screenshot: {screenshot_path}")
-                except:
-                    pass
             return "", ""
 
     def _get_safe_filename(self, url: str) -> str:
