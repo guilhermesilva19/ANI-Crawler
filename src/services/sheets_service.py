@@ -131,6 +131,7 @@ class SheetsService:
                 print(f"Found existing alerts spreadsheet: {self.spreadsheet_url}")
             else:
                 # Create new spreadsheet
+                print("No existing spreadsheet found, creating a new one...")
                 self._create_new_spreadsheet(spreadsheet_name)
                 
         except Exception as e:
@@ -140,7 +141,8 @@ class SheetsService:
     def _find_spreadsheet_in_folder(self, name: str) -> Optional[Dict]:
         """Find spreadsheet by name in the TOP_PARENT_ID folder."""
         try:
-            query = f"name='{name}' and parents in '{TOP_PARENT_ID}' and mimeType='application/vnd.google-apps.spreadsheet and trashed = false'"
+            query = f"name='{name}' and parents in '{TOP_PARENT_ID}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed = false"
+            print(f"Searching for spreadsheet '{query}' in folder ID: {TOP_PARENT_ID}")
             results = self.drive_service.files().list(q=query, fields="files(id, name)",supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
             files = results.get('files', [])
             return files[0] if files else None
