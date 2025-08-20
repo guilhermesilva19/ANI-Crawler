@@ -14,6 +14,7 @@ import re
 import requests
 
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.services.browser_service import BrowserService
 from src.services.drive_service import DriveService
 from src.services.slack_service import SlackService
@@ -570,79 +571,75 @@ class Crawler:
         return "; ".join(parts) if parts else "Page content changed"
 
     def run(self) -> None:
-        """Main crawl loop."""
+        """Main crawl loop with threading and concurrent task handling."""
         try:
             pages_processed_this_session = 0
-            
-            while True:
-                url = self.state_manager.get_next_url()
-                if not url:
-                    # Check if we completed a full cycle
-                    if pages_processed_this_session > 0:
-                        print(f"\n🎉 Completed crawl cycle! Processed {pages_processed_this_session} pages this session.")
-                        self.state_manager.complete_cycle()
-                        pages_processed_this_session = 0
-                    
-                    print("\nNo URLs remaining. Waiting for recrawl...")
-                    time.sleep(300)  # Wait 5 minutes before checking again
-                    continue
+            # Create ThreadPoolExecutor with a maximum number of workers (adjust this value as needed)
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = []  # List to keep track of the future tasks
 
-                # Clean URL
-                url = url.rstrip("/")
-                # Skip if URL should be excluded
-                if (CHECK_PREFIX and url.startswith(CHECK_PREFIX)):
-                    continue
-                if any(url.startswith(prefix) for prefix in EXCLUDE_PREFIXES):
-                    continue
-                
-            
-                # Skip URLs with year <= 2014
-                
-                year_match = re.search(r'/(\d{4})/', url)
-                if year_match:
-                    year = int(year_match.group(1))
-                    if year <= 2014:
-                        print(f"⏭️ Skipping old URL (year {year}): {url}")
+                while True:
+                    url = self.state_manager.get_next_url()
+                    if not url:
+                        # Check if we completed a full cycle
+                        if pages_processed_this_session > 0:
+                            print(f"\n🎉 Completed crawl cycle! Processed {pages_processed_this_session} pages this session.")
+                            self.state_manager.complete_cycle()
+                            pages_processed_this_session = 0
+                        
+                        print("\nNo URLs remaining. Waiting for recrawl...")
+                        time.sleep(300)  # Wait 5 minutes before checking again
                         continue
-                
+                    
+                    # Clean URL and filter based on conditions
+                    url = url.rstrip("/")
+                    if (CHECK_PREFIX and url.startswith(CHECK_PREFIX)):
+                        continue
+                    if any(url.startswith(prefix) for prefix in EXCLUDE_PREFIXES):
+                        continue
+                    
+                    year_match = re.search(r'/(\d{4})/', url)
+                    if year_match:
+                        year = int(year_match.group(1))
+                        if year <= 2014:
+                            print(f"⏭️ Skipping old URL (year {year}): {url}")
+                            continue
 
-        
-                print(f"\nCrawling: {url}")
-                self.process_page(url)
-                #  Optimization: memory + CPU throttling
-                time.sleep(0.5)  # Light pause to reduce CPU/memory pressure
-                gc.collect()     # Explicitly free memory
-                pages_processed_this_session += 1
+                    # Submit the task for processing and collect the future
+                    future = executor.submit(self.process_page, url)
+                    futures.append(future)  # Add future to the list
 
-                
-                
-                # Show progress every 10 pages
-                if pages_processed_this_session % 10 == 0:
-                    stats = self.state_manager.get_progress_stats()
-                    print(f"\n📊 Progress: {stats['completed_pages']}/{stats['total_known_pages']} ({stats['progress_percent']}%) - {stats['pages_per_hour']:.0f} pages/hour")
-                    if stats['eta_datetime']:
-                        print(f"⏰ ETA: {stats['eta_datetime'].strftime('%I:%M %p today' if stats['eta_datetime'].date() == datetime.now().date() else '%b %d at %I:%M %p')}")
-                
-                # Memory optimization for Render deployment
-                if pages_processed_this_session % self.memory_check_interval == 0:
-                    self._check_and_optimize_memory()
-                
-                # Rescue stuck URLs every 50 pages (roughly every 25-30 minutes)
-                if pages_processed_this_session % 50 == 0:
-                    self.state_manager.rescue_stuck_urls(stuck_minutes=60)
-                
-                # Polite delay between requests
-                time.sleep(30)
+                    # Show progress and handle completed tasks
+                    for future in as_completed(futures):
+                        try:
+                            future.result()  # Wait for the task to finish and process results
+                            pages_processed_this_session += 1
+                        except Exception as exc:
+                            print(f"❌ Error processing a page: {exc}")
+
+                    # Show progress every 10 pages
+                    if pages_processed_this_session % 10 == 0:
+                        stats = self.state_manager.get_progress_stats()
+                        print(f"\n📊 Progress: {stats['completed_pages']}/{stats['total_known_pages']} ({stats['progress_percent']}%) - {stats['pages_per_hour']:.0f} pages/hour")
+                        if stats['eta_datetime']:
+                            print(f"⏰ ETA: {stats['eta_datetime'].strftime('%I:%M %p today' if stats['eta_datetime'].date() == datetime.now().date() else '%b %d at %I:%M %p')}")
+
+                    # Memory optimization for Render deployment
+                    if pages_processed_this_session % self.memory_check_interval == 0:
+                        self._check_and_optimize_memory()
+
+                    # Rescue stuck URLs every 50 pages (roughly every 25-30 minutes)
+                    if pages_processed_this_session % 50 == 0:
+                        self.state_manager.rescue_stuck_urls(stuck_minutes=60)
+
+                    # Polite delay between requests
+                    time.sleep(30)
+
         except KeyboardInterrupt:
             print("\nCrawling interrupted by user.")
         except Exception as e:
-            if self.slack_service:
-                self.slack_service.send_error(f"Critical crawler error: {str(e)}")
-            print(f"\nCritical error: {e}")
-        finally:
-            # Cleanup services
-            if hasattr(self, 'scheduler_service') and self.scheduler_service:
-                self.scheduler_service.stop_scheduler()
+            print(f"Error: {e}")
+
 
     def _categorize_file_type(self, url: str) -> str:
         """Intelligently categorize file types based on URL and content patterns."""
