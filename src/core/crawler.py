@@ -588,7 +588,7 @@ class Crawler:
                             pages_processed_this_session = 0
                         
                         print("\nNo URLs remaining. Waiting for recrawl...")
-                        time.sleep(300)  # Wait 5 minutes before checking again
+                        time.sleep(3)  # Wait 5 minutes before checking again
                         continue
                     
                     # Clean URL and filter based on conditions
