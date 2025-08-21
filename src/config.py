@@ -11,6 +11,23 @@ PROXY_PASSWORD = os.getenv('PROXY_PASSWORD')
 CHECK_PREFIX = os.getenv('CHECK_PREFIX')
 
 # Google Drive Configuration
+GOOGLE_DRIVE_CREDENTIALS_FILE = os.getenv('GOOGLE_DRIVE_CREDENTIALS_FILE', 'credentials.json')
+GOOGLE_DRIVE_TOKEN_FILE = os.getenv('GOOGLE_DRIVE_TOKEN_FILE', 'token.json')
+GOOGLE_DRIVE_ROOT_FOLDER_ID = os.getenv('FOLDER_PARENT_ID')  # Use existing variable name
+
+# Service Account Configuration (alternative to OAuth 2.0)
+GOOGLE_SERVICE_ACCOUNT_TYPE = os.getenv('TYPE')
+GOOGLE_SERVICE_ACCOUNT_PROJECT_ID = os.getenv('PROJECT_ID')
+GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID = os.getenv('PRIVATE_KEY_ID')
+GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY = os.getenv('PRIVATE_KEY')
+GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL = os.getenv('CLIENT_EMAIL')
+GOOGLE_SERVICE_ACCOUNT_CLIENT_ID = os.getenv('CLIENT_ID')
+GOOGLE_SERVICE_ACCOUNT_AUTH_URI = os.getenv('AUTH_URI')
+GOOGLE_SERVICE_ACCOUNT_TOKEN_URI = os.getenv('TOKEN_URI')
+GOOGLE_SERVICE_ACCOUNT_AUTH_PROVIDER_X509_CERT_URL = os.getenv('AUTH_PROVIDER_x509_CERT_URL')
+# GOOGLE_SERVICE_ACCOUNT_CLIENT_X509_CERT_URL = os.getenv('CLIENT_X509_CERT_URL')
+GOOGLE_SERVICE_ACCOUNT_CLIENT_SECRET = os.getenv('CLIENT_SECRET')
+
 SCOPES = [
     'https://www.googleapis.com/auth/drive',
     'https://www.googleapis.com/auth/spreadsheets'
@@ -36,11 +53,8 @@ EXCLUDE_PREFIXES = [
     "https://treasury.gov.au/media",
     "https://treasury.gov.au/news",
     "https://treasury.gov.au/media",
-    "https://treasury.gov.au/news"
-    
+    "https://treasury.gov.au/news" 
 ]
-HTML_ONLY_MODE = os.getenv('HTML_ONLY_MODE', 'true').lower() == 'true'  # Set to 'false' to include all file types
-
 
 # Browser Configuration
 CHROME_OPTIONS = {
@@ -61,7 +75,6 @@ TARGET_URLS = [
     "https://treasury.gov.au/",
 ] 
 
-
 MONGODB_URI = os.getenv('MONGODB_URI')  # mongodb+srv://username:password@cluster.mongodb.net/
-SITE_ID = os.getenv('SITE_ID', 'treasury_gov_au')  # Unique identifier for this site
-SITE_NAME = os.getenv('SITE_NAME', 'Department of Treasury')  # Human-readable site name
+SITE_ID = os.getenv('SITE_ID', 'health_gov_au')  # Unique identifier for this site
+SITE_NAME = os.getenv('SITE_NAME', 'Department of Education')  # Human-readable site name

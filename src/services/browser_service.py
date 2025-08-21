@@ -10,6 +10,7 @@ import os
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 from ..config import CHROME_OPTIONS, SCREENSHOT_DIR
+from selenium.webdriver.support.ui import WebDriverWait
 
 __all__ = ['BrowserService']
 
@@ -42,6 +43,8 @@ class BrowserService:
             chrome_options.add_argument("--disable-plugins")
         if CHROME_OPTIONS.get('disable_images'):
             chrome_options.add_argument("--disable-images")
+        if CHROME_OPTIONS.get('dns-prefetch-disable'):
+            chrome_options.add_argument("--dns-prefetch-disable")
         if CHROME_OPTIONS.get('window_size'):
             width, height = CHROME_OPTIONS['window_size']
             chrome_options.add_argument(f"--window-size={width},{height}")
@@ -74,6 +77,7 @@ class BrowserService:
                 options=chrome_options,
                 seleniumwire_options=seleniumwire_options if self.proxy_options else None
             )
+            self.driver.set_script_timeout(1000)
         except Exception as e:
             print(f"\nError setting up WebDriver: {e}")
             raise
@@ -87,8 +91,19 @@ class BrowserService:
     def get_page(self, url: str) -> Tuple[Optional[BeautifulSoup], int]:
         """Load a page and return its parsed content along with HTTP status code."""
         try:
+            print(f"🔍 Loading page: {url}")
             self.driver.get(url)
-            time.sleep(10)  # Wait for page load
+            
+            # Wait for page to load with better validation
+            time.sleep(5)  # Initial wait
+            
+            # Wait for page to be ready
+            WebDriverWait(self.driver, 20).until(
+                lambda driver: driver.execute_script("return document.readyState") == "complete"
+            )
+            
+            # Additional wait for dynamic content
+            time.sleep(3)
             
             # Get final HTTP status from selenium-wire (after redirects)
             status_code = 200  # Default to success
@@ -104,8 +119,35 @@ class BrowserService:
             if status_code >= 400:
                 print(f"\nHTTP {status_code} for {final_url}")
                 return None, status_code
-                
-            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            
+            # Get page source with validation
+            page_source = self.driver.page_source
+            print(f"🔍 Page source length: {len(page_source)} characters")
+            
+            # Validate page source
+            if not page_source or len(page_source.strip()) < 100:
+                print(f"❌ Page source too short: {len(page_source)} characters")
+                print(f"🔍 Page source preview: {page_source[:200]}...")
+                return None, status_code
+            
+            # Check if page source contains basic HTML structure
+            if "<html" not in page_source.lower() and "<!doctype" not in page_source.lower():
+                print(f"❌ Page source doesn't contain HTML structure")
+                print(f"🔍 Page source preview: {page_source[:200]}...")
+                return None, status_code
+            
+            # Create BeautifulSoup object
+            soup = BeautifulSoup(page_source, 'html.parser')
+            
+            # Validate soup object
+            if not soup or not hasattr(soup, 'prettify'):
+                print(f"❌ Failed to create BeautifulSoup object")
+                return None, status_code
+            
+            # Check soup content
+            soup_text = soup.get_text(strip=True)
+            print(f"✅ Page loaded successfully: {len(soup_text)} characters of text content")
+            
             return soup, status_code
             
         except Exception as e:
@@ -135,17 +177,22 @@ class BrowserService:
 
             # Create screenshot directory if it doesn't exist
             os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+            print("make dir")
 
             # Generate filename from URL
             safe_filename = self._get_safe_filename(page_url)
             screenshot_path = os.path.join(SCREENSHOT_DIR, f"{safe_filename}.png")
+            print("screenshot path")
 
             # Set window size to capture full page
             total_height = self.driver.execute_script("return document.body.scrollHeight")
+            print("total height ==>", total_height)
             self.driver.set_window_size(1920, total_height)
+            print("-----")
             time.sleep(2)
 
             # Take screenshot
+            print("before screenshot")
             self.driver.save_screenshot(screenshot_path)
             
             return screenshot_path, safe_filename

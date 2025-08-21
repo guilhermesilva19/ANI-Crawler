@@ -3,13 +3,20 @@
 import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from google.oauth2.service_account import Credentials
+from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
 import json
 
 from ..config import SCOPES, TOP_PARENT_ID
-
+from src.config import (
+    SCOPES, 
+    GOOGLE_DRIVE_CREDENTIALS_FILE, 
+    GOOGLE_DRIVE_TOKEN_FILE, 
+    GOOGLE_DRIVE_ROOT_FOLDER_ID
+)
 __all__ = ['SheetsService']
 
 
@@ -25,36 +32,85 @@ class SheetsService:
         self._setup_services()
         self._setup_spreadsheet()
 
+    def get_credentials_with_refresh_token(self):
+        """Get credentials using the refresh token."""
+        creds = None
+        if os.path.exists(GOOGLE_DRIVE_TOKEN_FILE):
+            creds = Credentials.from_authorized_user_file(GOOGLE_DRIVE_TOKEN_FILE, SCOPES)
+            
+            if creds and creds.expired and creds.refresh_token:
+                print("🔄 Refreshing the access token using the refresh token...")
+                creds.refresh(Request())
+                
+                with open(GOOGLE_DRIVE_TOKEN_FILE, 'w') as token:
+                    token.write(creds.to_json())
+                print("✅ Access token refreshed and saved!")
+            
+            elif creds and creds.valid:
+                print("🔐 Using valid token")
+                return creds
+
+        if not creds or not creds.valid:
+            print("❌ No valid credentials found.")
+            return None
+        return creds  
+
     def _setup_services(self) -> None:
         """Setup Google Sheets and Drive API services."""
         try:
             # Get credentials from environment
-            private_key = os.getenv("PRIVATE_KEY")
-            if not private_key:
-                raise ValueError("PRIVATE_KEY environment variable not set")
+            # private_key = os.getenv("PRIVATE_KEY")
+            # if not private_key:
+            #     raise ValueError("PRIVATE_KEY environment variable not set")
             
-            # Replace escaped newlines in private key
-            private_key = private_key.replace('\\n', '\n')
+            # # Replace escaped newlines in private key
+            # private_key = private_key.replace('\\n', '\n')
             
-            # Create credentials
-            credentials_info = {
-                "type": "service_account",
-                "project_id": os.getenv("PROJECT_ID"),
-                "private_key_id": os.getenv("PRIVATE_KEY_ID"),
-                "private_key": private_key,
-                "client_email": os.getenv("CLIENT_EMAIL"),
-                "client_id": os.getenv("CLIENT_ID"),
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.getenv('CLIENT_EMAIL')}"
+            # # Create credentials
+            # credentials_info = {
+            #     "type": "service_account",
+            #     "project_id": os.getenv("PROJECT_ID"),
+            #     "private_key_id": os.getenv("PRIVATE_KEY_ID"),
+            #     "private_key": private_key,
+            #     "client_email": os.getenv("CLIENT_EMAIL"),
+            #     "client_id": os.getenv("CLIENT_ID"),
+            #     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            #     "token_uri": "https://oauth2.googleapis.com/token",
+            #     "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            #     # "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.getenv('CLIENT_EMAIL')}",
+            #     "client_secret": os.getenv("CLIENT_SECRET")
+            # }
+
+            service_account_info = {
+                "type": os.getenv('TYPE'),
+                "project_id": os.getenv('PROJECT_ID'),
+                "private_key_id": os.getenv('PRIVATE_KEY_ID'),
+                "private_key": os.getenv('PRIVATE_KEY'),
+                "client_email": os.getenv('CLIENT_EMAIL'),
+                "client_id": os.getenv('CLIENT_ID'),
+                "auth_uri": os.getenv('AUTH_URI'),
+                "token_uri": os.getenv('TOKEN_URI'),
+                "auth_provider_x509_cert_url": os.getenv('AUTH_PROVIDER_x509_CERT_URL'),
+                "client_secret": os.getenv("CLIENT_SECRET")
             }
             
-            credentials = Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
+            creds = self.get_credentials_with_refresh_token()
+            if creds and creds.valid:
+                print("🔐 Using existing refresh_token")
             
+            # Check if all required service account fields are present
+            else:
+                if all(service_account_info.values()):
+                    print("🔐 Using service account authentication")
+                    creds = service_account.Credentials.from_service_account_info(
+                        service_account_info, scopes=SCOPES
+                    )
+                else:
+                    print("⚠️ Service account credentials incomplete, trying OAuth 2.0...")
+                
             # Build services
-            self.sheets_service = build('sheets', 'v4', credentials=credentials)
-            self.drive_service = build('drive', 'v3', credentials=credentials)
+            self.sheets_service = build('sheets', 'v4', credentials=creds)
+            self.drive_service = build('drive', 'v3', credentials=creds)
             
             print("Google Sheets service initialized successfully")
             
@@ -75,6 +131,7 @@ class SheetsService:
                 print(f"Found existing alerts spreadsheet: {self.spreadsheet_url}")
             else:
                 # Create new spreadsheet
+                print("No existing spreadsheet found, creating a new one...")
                 self._create_new_spreadsheet(spreadsheet_name)
                 
         except Exception as e:
@@ -84,8 +141,9 @@ class SheetsService:
     def _find_spreadsheet_in_folder(self, name: str) -> Optional[Dict]:
         """Find spreadsheet by name in the TOP_PARENT_ID folder."""
         try:
-            query = f"name='{name}' and parents in '{TOP_PARENT_ID}' and mimeType='application/vnd.google-apps.spreadsheet'"
-            results = self.drive_service.files().list(q=query, fields="files(id, name)").execute()
+            query = f"name='{name}' and parents in '{TOP_PARENT_ID}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed = false"
+            print(f"Searching for spreadsheet '{query}' in folder ID: {TOP_PARENT_ID}")
+            results = self.drive_service.files().list(q=query, fields="files(id, name)",supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
             files = results.get('files', [])
             return files[0] if files else None
         except Exception as e:
@@ -95,28 +153,21 @@ class SheetsService:
     def _create_new_spreadsheet(self, name: str) -> None:
         """Create new spreadsheet in the Drive folder."""
         try:
-            # Create spreadsheet
-            spreadsheet_body = {
-                'properties': {
-                    'title': name
-                }
+            file_metadata = {
+                'name': name,
+                'mimeType': 'application/vnd.google-apps.spreadsheet',
+                'parents': [TOP_PARENT_ID]
             }
             
-            spreadsheet = self.sheets_service.spreadsheets().create(body=spreadsheet_body).execute()
-            self.spreadsheet_id = spreadsheet['spreadsheetId']
+            file = self.drive_service.files().create(
+                body=file_metadata,
+                supportsAllDrives=True
+            ).execute()
+
+            self.spreadsheet_id = file.get('id')
             self.spreadsheet_url = f"https://docs.google.com/spreadsheets/d/{self.spreadsheet_id}"
             
-            # Move to crawler folder
-            self.drive_service.files().update(
-                fileId=self.spreadsheet_id,
-                addParents=TOP_PARENT_ID,
-                removeParents='root',
-                fields='id, parents'
-            ).execute()
-            
             print(f"Created new alerts spreadsheet: {self.spreadsheet_url}")
-            print(f"Spreadsheet moved to crawler folder: {TOP_PARENT_ID}")
-            
         except Exception as e:
             print(f"Error creating spreadsheet: {e}")
             raise
