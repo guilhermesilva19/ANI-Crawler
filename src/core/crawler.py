@@ -21,7 +21,7 @@ from src.services.slack_service import SlackService
 from src.services.sheets_service import SheetsService
 from src.services.scheduler_service import SchedulerService
 from src.utils.content_comparison import compare_content, extract_links
-from src.utils.state_manager import StateManager
+from src.utils.mongo_state_adapter import MongoStateAdapter
 from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID, EXCLUDE_PREFIXES
 
 __all__ = ['Crawler']
@@ -31,7 +31,7 @@ class Crawler:
     """Main crawler class that handles webpage monitoring and change detection."""
     
     def __init__(self):
-        self.state_manager = StateManager()
+        self.state_manager = MongoStateAdapter()
         
         # Memory optimization settings for Render deployment
         self.max_memory_mb = int(os.getenv('MAX_MEMORY_MB', '512'))  # Default 512MB limit
