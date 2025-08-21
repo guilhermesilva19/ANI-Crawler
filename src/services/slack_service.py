@@ -12,7 +12,7 @@ class SlackService:
     def __init__(self):
         """Initialize Slack service with token and channel."""
         self.client = WebClient(token=SLACK_TOKEN)
-        self.channel = CHANNEL_ID if CHANNEL_ID else "#education-dept"
+        self.channel = CHANNEL_ID if CHANNEL_ID else "#ndis-gov-au"
         self._message_queue = []  # Store messages to be sent in batch
 
     def format_change_message(self, page_url: str, 
