@@ -21,7 +21,7 @@ from src.services.slack_service import SlackService
 from src.services.sheets_service import SheetsService
 from src.services.scheduler_service import SchedulerService
 from src.utils.content_comparison import compare_content, extract_links
-from src.utils.state_manager import StateManager
+from src.utils.mongo_state_adapter import MongoStateAdapter
 from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID, EXCLUDE_PREFIXES
 
 __all__ = ['Crawler']
@@ -31,7 +31,7 @@ class Crawler:
     """Main crawler class that handles webpage monitoring and change detection."""
     
     def __init__(self):
-        self.state_manager = StateManager()
+        self.state_manager = MongoStateAdapter()
         
         # Memory optimization settings for Render deployment
         self.max_memory_mb = int(os.getenv('MAX_MEMORY_MB', '512'))  # Default 512MB limit
@@ -138,10 +138,12 @@ class Crawler:
 
         try:
             # Fetch and parse page
+            print("BEFORE GET PAGE", url)
             soup, status_code = page_browser.get_page(url)
-            
+            print("AFTER GET PAGE")
             # Check for deleted page before processing
             is_deleted_page = self.state_manager.update_url_status(url, status_code)
+            print("AFTER UPDATE URL STATUS", is_deleted_page)
             if is_deleted_page:
                 # Get last successful access time for the alert
                 url_status = self.state_manager.url_status.get(url, {})
@@ -411,6 +413,7 @@ class Crawler:
 
             # Upload new version and rename old version ONLY when page is new or changed
             upload_success = False
+            print("BEFORE CHECK HAS CHANGES")
             if has_changes and self.drive_service:
                 try:
                     # Add delay before upload to prevent hitting API quotas
@@ -628,9 +631,9 @@ class Crawler:
                     if pages_processed_this_session % self.memory_check_interval == 0:
                         self._check_and_optimize_memory()
 
-                    # # Rescue stuck URLs every 50 pages (roughly every 25-30 minutes)
-                    # if pages_processed_this_session % 50 == 0:
-                    #     self.state_manager.rescue_stuck_urls(stuck_minutes=60)
+                    # Rescue stuck URLs every 50 pages (roughly every 25-30 minutes)
+                    if pages_processed_this_session % 50 == 0:
+                        self.state_manager.rescue_stuck_urls(stuck_minutes=60)
 
                     # Polite delay between requests
                     time.sleep(30)
