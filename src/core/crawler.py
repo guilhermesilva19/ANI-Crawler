@@ -139,7 +139,6 @@ class Crawler:
         try:
             # Fetch and parse page
             soup, status_code = page_browser.get_page(url)
-            
             # Check for deleted page before processing
             is_deleted_page = self.state_manager.update_url_status(url, status_code)
             if is_deleted_page:
@@ -411,6 +410,7 @@ class Crawler:
 
             # Upload new version and rename old version ONLY when page is new or changed
             upload_success = False
+            print("BEFORE CHECK HAS CHANGES")
             if has_changes and self.drive_service:
                 try:
                     # Add delay before upload to prevent hitting API quotas
@@ -588,7 +588,7 @@ class Crawler:
                             pages_processed_this_session = 0
                         
                         print("\nNo URLs remaining. Waiting for recrawl...")
-                        time.sleep(300)  # Wait 5 minutes before checking again
+                        time.sleep(3)  # Wait 5 minutes before checking again
                         continue
                     
                     # Clean URL and filter based on conditions
