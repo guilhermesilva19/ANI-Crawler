@@ -64,7 +64,6 @@ zstandard==0.23.0
 pymongo
 motor
  
-psutilAPScheduler==3.10.4
 attrs==25.3.0
 beautifulsoup4==4.13.4
 blinker==1.7.0
@@ -125,9 +124,8 @@ webdriver-manager==4.0.2
 websocket-client==1.8.0
 wsproto==1.2.0
 zstandard==0.23.0
+psutil==7.0.0
 
 # MongoDB support (optional - fallback to file-based if not available)
 pymongo
 motor
- 
-psutil
