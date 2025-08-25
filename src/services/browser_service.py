@@ -52,12 +52,12 @@ class BrowserService:
             chrome_options.add_argument(f"user-agent={CHROME_OPTIONS['user_agent']}")
         
         # Additional Docker-specific Chrome options
-        chrome_options.add_argument("--disable-background-timer-throttling")
-        chrome_options.add_argument("--disable-backgrounding-occluded-windows")
-        chrome_options.add_argument("--disable-renderer-backgrounding")
-        chrome_options.add_argument("--disable-features=TranslateUI")
-        chrome_options.add_argument("--disable-ipc-flooding-protection")
-        chrome_options.add_argument("--remote-debugging-port=9222")
+        # chrome_options.add_argument("--disable-background-timer-throttling")
+        # chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+        # chrome_options.add_argument("--disable-renderer-backgrounding")
+        # chrome_options.add_argument("--disable-features=TranslateUI")
+        # chrome_options.add_argument("--disable-ipc-flooding-protection")
+        # chrome_options.add_argument("--remote-debugging-port=9222")
 
         try:
             # Configure selenium-wire with proxy if provided
