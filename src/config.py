@@ -46,18 +46,14 @@ NEXT_CRAWL_FILE = "next_crawl.pkl"
 SCANNED_PAGES_FILE = "scanned_pages.txt"
 
 # Base URL Configuration
-BASE_URL = "https://www.education.gov.au"
+BASE_URL = "https://www.ato.gov.au"
 
 # URLs to exclude from crawling
-EXCLUDE_PREFIXES = [
-    "https://www.education.gov.au/newsroom",
-    "https://ministers.education.gov.au/clare",
-    "https://www.education.gov.au/news"
-]
+EXCLUDE_PREFIXES = []
 
 # Browser Configuration
 CHROME_OPTIONS = {
-    "headless": True,
+    "headless": False,
     "disable_gpu": True,
     "no_sandbox": True,
     "disable_dev_shm_usage": True,
@@ -71,9 +67,9 @@ CHROME_OPTIONS = {
 
 # Target URLs
 TARGET_URLS = [
-    "https://www.education.gov.au/",
+    "https://www.ato.gov.au/",
 ] 
 
 MONGODB_URI = os.getenv('MONGODB_URI')  # mongodb+srv://username:password@cluster.mongodb.net/
-SITE_ID = os.getenv('SITE_ID', 'education_gov_au')  # Unique identifier for this site
-SITE_NAME = os.getenv('SITE_NAME', 'Department of Education')  # Human-readable site name
+SITE_ID = os.getenv('SITE_ID', 'ato_gov_au')  # Unique identifier for this site
+SITE_NAME = os.getenv('SITE_NAME', 'Department of ato')  # Human-readable site name

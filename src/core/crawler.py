@@ -648,7 +648,7 @@ class Crawler:
         """Intelligently categorize file types based on URL and content patterns."""
         url_lower = url.lower()
         
-        # Check for download/file patterns first (most common on education.gov.au)
+        # Check for download/file patterns first (most common on ato.gov.au)
         if '/download/' in url_lower or '/downloads/' in url_lower or '/files/' in url_lower or '/attachments/' in url_lower:
             return "document"  # Keep consistent with existing 11k URLs
         
