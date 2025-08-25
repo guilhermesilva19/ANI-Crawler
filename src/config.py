@@ -53,16 +53,16 @@ EXCLUDE_PREFIXES = []
 
 # Browser Configuration
 CHROME_OPTIONS = {
-    "headless": False,
+    "headless": True,
     "disable_gpu": True,
     "no_sandbox": True,
-    "disable_dev_shm_usage": True,
-    "disable_extensions": True,
-    "disable_plugins": True,
-    "disable_images": True,
-    "disable_javascript": False,
+    # "disable_dev_shm_usage": True,
+    # "disable_extensions": True,
+    # "disable_plugins": True,
+    # "disable_images": True,
+    # "disable_javascript": False,
     "window_size": (1920, 1080),
-    "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/113.0.0.0 Safari/537.36"
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:141.0) Gecko/20100101 Firefox/141.0"
 }
 
 # Target URLs
@@ -71,5 +71,5 @@ TARGET_URLS = [
 ] 
 
 MONGODB_URI = os.getenv('MONGODB_URI')  # mongodb+srv://username:password@cluster.mongodb.net/
-SITE_ID = os.getenv('SITE_ID', 'ato_gov_au')  # Unique identifier for this site
+SITE_ID = os.getenv('SITE_ID', 'ato_gov_au_7')  # Unique identifier for this site
 SITE_NAME = os.getenv('SITE_NAME', 'Department of ato')  # Human-readable site name

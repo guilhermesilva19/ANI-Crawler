@@ -34,9 +34,9 @@ def test_state_manager_progress_tracking():
     
     # Simulate some crawl data
     test_urls = [
-        "https://education.gov.au/page1",
-        "https://education.gov.au/page2", 
-        "https://education.gov.au/page3"
+        "https://ato.gov.au/page1",
+        "https://ato.gov.au/page2", 
+        "https://ato.gov.au/page3"
     ]
     
     print(f"   → Initial state: {len(state_manager.visited_urls)} visited, {len(state_manager.remaining_urls)} remaining")
@@ -233,13 +233,13 @@ def test_progress_calculations():
     
     # Add some visited URLs
     for i in range(250):  # 25% complete
-        url = f"https://education.gov.au/test-page-{i}"
+        url = f"https://ato.gov.au/test-page-{i}"
         state_manager.visited_urls.add(url)
         state_manager.record_page_crawl(url, 10.0, "normal")
     
     # Add remaining URLs
     for i in range(250, 1000):
-        url = f"https://education.gov.au/test-page-{i}"
+        url = f"https://ato.gov.au/test-page-{i}"
         state_manager.remaining_urls.add(url)
     
     stats = state_manager.get_progress_stats()
