@@ -7,7 +7,8 @@ from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
 import os
-from typing import Optional, Tuple
+import requests
+from typing import Optional, Tuple, Dict
 from urllib.parse import urlparse
 from ..config import CHROME_OPTIONS, SCREENSHOT_DIR
 from selenium.webdriver.support.ui import WebDriverWait
@@ -81,6 +82,61 @@ class BrowserService:
         except Exception as e:
             print(f"\nError setting up WebDriver: {e}")
             raise
+
+    def check_headers_only(self, url: str, cached_headers: Optional[Dict] = None) -> Tuple[bool, Optional[Dict]]:
+        """Efficiently check page headers without downloading full content.
+        
+        Returns:
+            (has_changed, header_info) - has_changed=True if page should be fetched
+        """
+        try:
+            headers = {
+                'User-Agent': CHROME_OPTIONS.get('user_agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'),
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive',
+            }
+            
+            # Add conditional headers if we have cached info
+            if cached_headers:
+                if cached_headers.get('etag'):
+                    headers['If-None-Match'] = cached_headers['etag']
+                if cached_headers.get('last_modified'):
+                    headers['If-Modified-Since'] = cached_headers['last_modified']
+            
+            # Use requests for header checking (much faster than Selenium)
+            response = requests.head(url, headers=headers, timeout=10, allow_redirects=True)
+            
+            # Handle 304 Not Modified
+            if response.status_code == 304:
+                return False, cached_headers
+            
+            # Extract useful headers
+            header_info = {
+                'etag': response.headers.get('ETag'),
+                'last_modified': response.headers.get('Last-Modified'),
+                'content_length': response.headers.get('Content-Length'),
+                'content_type': response.headers.get('Content-Type'),
+                'status_code': response.status_code
+            }
+            
+            # Check if headers indicate change
+            if cached_headers:
+                etag_changed = (header_info.get('etag') != cached_headers.get('etag'))
+                modified_changed = (header_info.get('last_modified') != cached_headers.get('last_modified'))
+                
+                # If we have ETags or Last-Modified and they haven't changed, skip
+                if not etag_changed and not modified_changed:
+                    if header_info.get('etag') or header_info.get('last_modified'):
+                        return False, header_info
+            
+            return True, header_info
+            
+        except Exception as e:
+            print(f"⚠️  Header check failed for {url}: {e}")
+            # On error, assume page should be fetched
+            return True, None
 
     def quit(self) -> None:
         """Safely quit the browser."""

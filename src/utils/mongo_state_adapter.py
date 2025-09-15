@@ -366,6 +366,22 @@ class MongoStateAdapter:
         
         self.save_progress()
     
+    def get_url_info(self, url: str) -> Optional[Dict]:
+        """Get detailed information about a URL."""
+        doc = self.db.url_states.find_one({
+            "site_id": self.site_id,
+            "url": url
+        })
+        return doc
+
+    def return_url_to_queue(self, url: str) -> None:
+        """Return a URL to the queue (change from in_progress back to remaining)."""
+        self.db.url_states.update_one(
+            {"site_id": self.site_id, "url": url},
+            {"$set": {"status": "remaining", "updated_at": datetime.now()}}
+        )
+        self.remaining_urls.add(url)
+
     def get_next_url(self) -> Optional[str]:
         """Get next URL directly from database, not memory."""
         # Try to get a remaining URL
