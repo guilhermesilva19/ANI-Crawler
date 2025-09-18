@@ -28,7 +28,7 @@ def test_browser_service():
         print("✅ BrowserService initialized successfully")
         
         # Test 2: Load a simple, fast page
-        test_url = "https://www.ato.gov.au/early-childhood/provider-obligations/child-care-enforcement-action-register/child-care-enforcement-action-register-20162017"
+        test_url = "https://www.education.gov.au/early-childhood/provider-obligations/child-care-enforcement-action-register/child-care-enforcement-action-register-20162017"
         print(f"\n📄 Test 2: Loading page {test_url}...")
         soup, status_code = browser_service.get_page(test_url)
         

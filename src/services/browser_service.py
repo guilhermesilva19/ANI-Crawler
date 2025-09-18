@@ -22,11 +22,34 @@ class BrowserService:
         """Initialize browser service with optional proxy settings."""
         self.driver = None
         self.proxy_options = proxy_options
+        
+        # Session management variables
+        self.session_page_count = 0
+        self.max_pages_per_session = 50  # Restart browser after 50 pages
         self.setup_driver()
 
     def setup_driver(self) -> None:
         """Set up the Selenium WebDriver with appropriate options."""
         chrome_options = Options()
+        
+        # Set Chrome binary location based on platform
+        if os.name == 'posix':  # Linux or macOS
+            # Common Linux Chrome locations
+            chrome_paths = [
+                '/usr/bin/google-chrome',
+                '/usr/bin/google-chrome-stable',
+                '/usr/bin/chrome',
+                '/usr/bin/chromium-browser',
+                '/usr/bin/chromium'
+            ]
+            # Find the first existing Chrome binary
+            chrome_binary = next((path for path in chrome_paths if os.path.exists(path)), None)
+            if chrome_binary:
+                chrome_options.binary_location = chrome_binary
+            else:
+                print("⚠️  Chrome binary not found in common locations. Make sure Chrome is installed.")
+        else:  # Windows
+            chrome_options.binary_location = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
         
         # Add Chrome options from config
         if CHROME_OPTIONS.get('headless'):
@@ -52,12 +75,29 @@ class BrowserService:
             chrome_options.add_argument(f"user-agent={CHROME_OPTIONS['user_agent']}")
         
         # Additional Docker-specific Chrome options
-        # chrome_options.add_argument("--disable-background-timer-throttling")
-        # chrome_options.add_argument("--disable-backgrounding-occluded-windows")
-        # chrome_options.add_argument("--disable-renderer-backgrounding")
-        # chrome_options.add_argument("--disable-features=TranslateUI")
-        # chrome_options.add_argument("--disable-ipc-flooding-protection")
-        # chrome_options.add_argument("--remote-debugging-port=9222")
+        chrome_options.add_argument("--disable-background-timer-throttling")
+        chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+        chrome_options.add_argument("--disable-renderer-backgrounding")
+        chrome_options.add_argument("--disable-features=TranslateUI")
+        chrome_options.add_argument("--disable-ipc-flooding-protection")
+        chrome_options.add_argument("--remote-debugging-port=9222")
+
+        # Disable background processes that slow down crawling
+        chrome_options.add_argument("--disable-background-networking")
+        chrome_options.add_argument("--disable-default-apps")
+        chrome_options.add_argument("--disable-sync")
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+        chrome_options.add_argument("--memory-pressure-off")
+        chrome_options.add_argument("--max_old_space_size=4096")
+        chrome_options.add_argument("--disable-client-side-phishing-detection")
+        chrome_options.add_argument("--disable-component-extensions-with-background-pages")
+        chrome_options.add_argument("--disable-default-apps")
+        chrome_options.add_argument("--disable-hang-monitor")
+        chrome_options.add_argument("--disable-popup-blocking")
+        chrome_options.add_argument("--disable-prompt-on-repost")
+        chrome_options.add_argument("--disable-domain-reliability")
+        chrome_options.add_argument("--disable-component-update")
 
         try:
             # Configure selenium-wire with proxy if provided
@@ -82,28 +122,104 @@ class BrowserService:
             print(f"\nError setting up WebDriver: {e}")
             raise
 
+    def wait_for_page_ready(self, timeout: int = 15) -> None:
+        """Smart page load detection with adaptive waiting."""
+        try:
+            start_time = time.time()
+            
+            # Step 1: Wait for document ready state
+            WebDriverWait(self.driver, timeout).until(
+                lambda driver: driver.execute_script("return document.readyState") == "complete"
+            )
+            
+            # Step 2: Wait for network activity to settle
+            network_quiet_time = 0
+            last_request_count = 0
+            
+            while time.time() - start_time < timeout:
+                try:
+                    # Count active network requests
+                    current_requests = len(self.driver.requests)
+                    
+                    # If no new requests for 2 seconds, consider page ready
+                    if current_requests == last_request_count:
+                        network_quiet_time += 0.5
+                        if network_quiet_time >= 2.0:  # 2 seconds of network quiet
+                            break
+                    else:
+                        network_quiet_time = 0  # Reset counter
+                        last_request_count = current_requests
+                    
+                    time.sleep(0.5)  # Check every 500ms
+                    
+                except Exception:
+                    # Fallback: just wait for DOM ready + 1 second
+                    #time.sleep(1)
+                    break
+            
+            # Step 3: Final check for dynamic content (minimal wait)
+            # time.sleep(0.5)  # Very short final wait
+            
+            elapsed = time.time() - start_time
+            print(f"⚡ Page ready in {elapsed:.1f} seconds")
+            
+        except Exception as e:
+            print(f"⚠️ Smart wait failed, using fallback: {e}")
+            #time.sleep(2)  # Minimal fallback wait
+
+    def should_restart_browser(self) -> bool:
+        """Check if browser session should be restarted."""
+        return (
+            self.session_page_count >= self.max_pages_per_session or 
+            not self.driver or 
+            not self._is_browser_responsive()
+        )
+    
+    def _is_browser_responsive(self) -> bool:
+        """Check if browser is still responsive."""
+        try:
+            # Test if browser is responsive by checking current URL
+            _ = self.driver.current_url
+            return True
+        except Exception:
+            return False
+    
+    def restart_browser_if_needed(self) -> None:
+        """Restart browser session if needed."""
+        if self.should_restart_browser():
+            print(f"🔄 Restarting browser session (processed {self.session_page_count} pages)")
+            self.quit()
+            self.session_page_count = 0
+            self.setup_driver()
+    
+    def increment_page_count(self) -> None:
+        """Increment the page counter for session management."""
+        self.session_page_count += 1
+        if self.session_page_count % 10 == 0:  # Log every 10 pages
+            print(f"📊 Session stats: {self.session_page_count}/{self.max_pages_per_session} pages processed")
+
     def quit(self) -> None:
         """Safely quit the browser."""
         if self.driver:
-            self.driver.quit()
-            print(f"   🗑️  Browser instance terminated")
+            try:
+                self.driver.quit()
+                print(f"   🗑️  Browser instance terminated (processed {self.session_page_count} pages)")
+            except Exception as e:
+                print(f"   ⚠️  Error during browser quit: {e}")
+            finally:
+                self.driver = None
 
     def get_page(self, url: str) -> Tuple[Optional[BeautifulSoup], int]:
         """Load a page and return its parsed content along with HTTP status code."""
         try:
+            # Check if browser needs restarting before processing
+            self.restart_browser_if_needed()
+            
             print(f"🔍 Loading page: {url}")
             self.driver.get(url)
             
-            # Wait for page to load with better validation
-            time.sleep(5)  # Initial wait
-            
-            # Wait for page to be ready
-            WebDriverWait(self.driver, 20).until(
-                lambda driver: driver.execute_script("return document.readyState") == "complete"
-            )
-            
-            # Additional wait for dynamic content
-            time.sleep(3)
+            # Smart page load detection (replaces fixed 8-second wait)
+            self.wait_for_page_ready(timeout=15)
             
             # Get final HTTP status from selenium-wire (after redirects)
             status_code = 200  # Default to success
@@ -147,6 +263,9 @@ class BrowserService:
             # Check soup content
             soup_text = soup.get_text(strip=True)
             print(f"✅ Page loaded successfully: {len(soup_text)} characters of text content")
+
+            # Increment page counter for session management
+            self.increment_page_count()
             
             return soup, status_code
             
@@ -173,7 +292,7 @@ class BrowserService:
         try:
             self.scroll_full_page()
             self.driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            #time.sleep(2)
 
             # Create screenshot directory if it doesn't exist
             os.makedirs(SCREENSHOT_DIR, exist_ok=True)
@@ -189,7 +308,7 @@ class BrowserService:
             print("total height ==>", total_height)
             self.driver.set_window_size(1920, total_height)
             print("-----")
-            time.sleep(2)
+            #time.sleep(2)
 
             # Take screenshot
             print("before screenshot")

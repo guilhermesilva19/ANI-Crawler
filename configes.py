@@ -1,4 +1,4 @@
-#ato.gov.au
+#education.gov.au
 '''import os
 from dotenv import load_dotenv
 
@@ -30,13 +30,13 @@ NEXT_CRAWL_FILE = "next_crawl.pkl"
 SCANNED_PAGES_FILE = "scanned_pages.txt"
 
 # Base URL Configuration
-BASE_URL = "https://www.ato.gov.au"
+BASE_URL = "https://www.education.gov.au"
 
 # URLs to exclude from crawling
 EXCLUDE_PREFIXES = [
-    "https://www.ato.gov.au/newsroom",
-    "https://ministers.ato.gov.au/clare",
-    "https://www.ato.gov.au/news"
+    "https://www.education.gov.au/newsroom",
+    "https://ministers.education.gov.au/clare",
+    "https://www.education.gov.au/news"
 ]
 
 
@@ -56,7 +56,7 @@ CHROME_OPTIONS = {
 
 # Target URLs
 TARGET_URLS = [
-    "https://www.ato.gov.au/",
+    "https://www.education.gov.au/",
 ] 
 
 
