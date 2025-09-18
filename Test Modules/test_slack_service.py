@@ -12,7 +12,7 @@ class TestSlackService(unittest.TestCase):
         """Set up test environment."""
         self.slack_service = SlackService()
         self.slack_service.client = Mock()  # Mock the Slack client
-        self.test_url = "https://www.ato.gov.au/test-page"
+        self.test_url = "https://www.education.gov.au/test-page"
         self.test_screenshot_url = "https://drive.google.com/test-screenshot"
         self.test_html_url = "https://drive.google.com/test-html"
 
@@ -192,7 +192,7 @@ class TestSlackService(unittest.TestCase):
     def test_url_formatting(self):
         """Test URL formatting utilities."""
         # Test URL truncation
-        long_url = "https://www.ato.gov.au/" + "x" * 100
+        long_url = "https://www.education.gov.au/" + "x" * 100
         truncated = self.slack_service._truncate_url(long_url)
         self.assertTrue(len(truncated) <= 50)
         self.assertTrue(truncated.endswith("..."))

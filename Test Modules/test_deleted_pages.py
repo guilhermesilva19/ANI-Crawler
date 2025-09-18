@@ -26,7 +26,7 @@ def test_deleted_page_detection():
     print("=" * 50)
     
     # Test URL
-    test_url = "https://www.ato.gov.au/test-deleted-page"
+    test_url = "https://www.education.gov.au/test-deleted-page"
     
     print(f"📝 Testing URL: {test_url}")
     print("\n🔄 PHASE 1: Simulating successful first visit...")
@@ -120,7 +120,7 @@ def test_deleted_page_detection():
 def test_multiple_failures():
     """Test detection after multiple failures (not just 404)."""
     
-    test_url = "https://www.ato.gov.au/test-multiple-failures"
+    test_url = "https://www.education.gov.au/test-multiple-failures"
     state_manager = StateManager()
     
     try:

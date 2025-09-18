@@ -53,7 +53,7 @@ def test_sheets_service():
         # Test 1: New Page Alert
         print("   → Testing New Page alert...")
         sheets_service.log_new_page_alert(
-            "https://www.ato.gov.au/test-new-page",
+            "https://www.education.gov.au/test-new-page",
             "https://drive.google.com/screenshots/test",
             "https://drive.google.com/html/test"
         )
@@ -61,7 +61,7 @@ def test_sheets_service():
         # Test 2: Changed Page Alert
         print("   → Testing Changed Page alert...")
         sheets_service.log_changed_page_alert(
-            "https://www.ato.gov.au/test-changed-page",
+            "https://www.education.gov.au/test-changed-page",
             "Added 2 text sections; Removed 1 link; Added 1 PDF",
             "https://drive.google.com/screenshots/test2",
             "https://drive.google.com/html/test2"
@@ -71,7 +71,7 @@ def test_sheets_service():
         print("   → Testing Deleted Page alert...")
         last_success = datetime(2024, 12, 15, 10, 30, 0)
         sheets_service.log_deleted_page_alert(
-            "https://www.ato.gov.au/test-deleted-page",
+            "https://www.education.gov.au/test-deleted-page",
             404,
             last_success
         )

@@ -418,7 +418,7 @@ class Crawler:
                 try:
                     # Add delay before upload to prevent hitting API quotas
                     print(f"⏳ Waiting 3 seconds before upload to avoid API quota issues...")
-                    time.sleep(3)
+                    # time.sleep(2)
                     
                     if new_file_id:
                         self.drive_service.rename_file(new_file_id, os.path.basename(old_file))
@@ -430,7 +430,7 @@ class Crawler:
                         raise Exception(f"Failed to upload HTML file: {filename}")
                     
                     # Add delay between uploads to prevent quota issues
-                    time.sleep(2)
+                    # time.sleep(2)
                     
                     # Upload screenshot only if new/changed and available
                     if screenshot_path:
@@ -591,7 +591,7 @@ class Crawler:
                             pages_processed_this_session = 0
                         
                         print("\nNo URLs remaining. Waiting for recrawl...")
-                        time.sleep(3)  # Wait 5 minutes before checking again
+                        # time.sleep(3)  # Wait 5 minutes before checking again
                         continue
                     
                     # Clean URL and filter based on conditions
@@ -635,9 +635,6 @@ class Crawler:
                     if pages_processed_this_session % 50 == 0:
                         self.state_manager.rescue_stuck_urls(stuck_minutes=60)
 
-                    # Polite delay between requests
-                    time.sleep(30)
-
         except KeyboardInterrupt:
             print("\nCrawling interrupted by user.")
         except Exception as e:
@@ -648,7 +645,7 @@ class Crawler:
         """Intelligently categorize file types based on URL and content patterns."""
         url_lower = url.lower()
         
-        # Check for download/file patterns first (most common on ato.gov.au)
+        # Check for download/file patterns first (most common on education.gov.au)
         if '/download/' in url_lower or '/downloads/' in url_lower or '/files/' in url_lower or '/attachments/' in url_lower:
             return "document"  # Keep consistent with existing 11k URLs
         

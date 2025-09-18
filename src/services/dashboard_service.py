@@ -254,7 +254,7 @@ class DashboardService:
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": "🤖 Automated daily crawl progress • Next report tomorrow at 10:00 AM AEST • Monitoring ato.gov.au for changes"
+                    "text": "🤖 Automated daily crawl progress • Next report tomorrow at 10:00 AM AEST • Monitoring education.gov.au for changes"
                 }
             ]
         })
