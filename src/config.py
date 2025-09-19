@@ -75,5 +75,5 @@ TARGET_URLS = [
 ] 
 
 MONGODB_URI = os.getenv('MONGODB_URI')  # mongodb+srv://username:password@cluster.mongodb.net/
-SITE_ID = os.getenv('SITE_ID', 'ato_gov_au')  # Unique identifier for this site
+SITE_ID = os.getenv('SITE_ID', 'ato_gov_au_7')  # Unique identifier for this site
 SITE_NAME = os.getenv('SITE_NAME', 'Department of ato')  # Human-readable site name
