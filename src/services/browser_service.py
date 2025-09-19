@@ -33,21 +33,19 @@ class BrowserService:
         chrome_options = Options()
         
         # Set Chrome binary location based on platform
-        if os.name == 'posix':  # Linux or macOS
-            # Common Linux Chrome locations
+        if os.name == 'posix':  # macOS or Linux
             chrome_paths = [
-                '/usr/bin/google-chrome',
-                '/usr/bin/google-chrome-stable',
-                '/usr/bin/chrome',
-                '/usr/bin/chromium-browser',
-                '/usr/bin/chromium'
+                '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',  # macOS default
+                '/usr/bin/google-chrome',  # Linux default
+                '/usr/bin/google-chrome-stable',  # Linux stable
+                '/usr/bin/chromium-browser',  # Linux Chromium
             ]
             # Find the first existing Chrome binary
             chrome_binary = next((path for path in chrome_paths if os.path.exists(path)), None)
             if chrome_binary:
                 chrome_options.binary_location = chrome_binary
             else:
-                print("⚠️  Chrome binary not found in common locations. Make sure Chrome is installed.")
+                print("⚠️  Chrome binary not found in common locations. Please install Chrome browser.")
         else:  # Windows
             chrome_options.binary_location = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
         
@@ -124,15 +122,18 @@ class BrowserService:
 
     def wait_for_page_ready(self, timeout: int = 15) -> None:
         """Smart page load detection with adaptive waiting."""
+        print(f"⏳ 1. Waiting for page to load (max {timeout}s timeout)...")
         try:
             start_time = time.time()
             
             # Step 1: Wait for document ready state
+            print("   📄 Waiting for document ready state...")
             WebDriverWait(self.driver, timeout).until(
                 lambda driver: driver.execute_script("return document.readyState") == "complete"
             )
             
             # Step 2: Wait for network activity to settle
+            print("   🌐 Waiting for network activity to settle...")
             network_quiet_time = 0
             last_request_count = 0
             
@@ -150,22 +151,23 @@ class BrowserService:
                         network_quiet_time = 0  # Reset counter
                         last_request_count = current_requests
                     
-                    time.sleep(0.5)  # Check every 500ms
                     
                 except Exception:
                     # Fallback: just wait for DOM ready + 1 second
-                    #time.sleep(1)
+                    print("   ⚠️ Network check failed, using fallback delay: 1 second")
+
                     break
             
             # Step 3: Final check for dynamic content (minimal wait)
-            # time.sleep(0.5)  # Very short final wait
+            print("   ⏱️ Final stability check: 0.5 seconds")
+ # Very short final wait
             
             elapsed = time.time() - start_time
-            print(f"⚡ Page ready in {elapsed:.1f} seconds")
+            print(f"✅ Page ready in {elapsed:.1f} seconds")
             
         except Exception as e:
-            print(f"⚠️ Smart wait failed, using fallback: {e}")
-            #time.sleep(2)  # Minimal fallback wait
+            print(f"⚠️ Smart wait failed, using fallback delay: 2 seconds - {e}")
+
 
     def should_restart_browser(self) -> bool:
         """Check if browser session should be restarted."""
@@ -275,15 +277,20 @@ class BrowserService:
 
     def scroll_full_page(self, pause_time: float = 1.5) -> None:
         """Scroll down incrementally until the bottom of the page is reached."""
+        print(f"⏬ 2. Scrolling through page (pausing {pause_time}s between scrolls)...")
         try:
             last_height = self.driver.execute_script("return document.body.scrollHeight")
+            scroll_count = 0
             while True:
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                scroll_count += 1
+                print(f"   📜 Scroll #{scroll_count} - waiting {pause_time}s for content to load...")
                 time.sleep(pause_time)
                 new_height = self.driver.execute_script("return document.body.scrollHeight")
                 if new_height == last_height:
                     break
                 last_height = new_height
+            print(f"✅ Scrolling complete - {scroll_count} scrolls performed")
         except Exception as e:
             print(f"\nError scrolling page: {e}")
 
@@ -291,8 +298,11 @@ class BrowserService:
         """Capture and save a full-page screenshot."""
         try:
             self.scroll_full_page()
+            print("📸 3. Preparing to take screenshot...")
+            print("   ⬆️ Scrolling back to top of page...")
             self.driver.execute_script("window.scrollTo(0, 0);")
-            #time.sleep(2)
+            print("   ⏱️ Waiting 2 seconds for page to stabilize before screenshot...")
+
 
             # Create screenshot directory if it doesn't exist
             os.makedirs(SCREENSHOT_DIR, exist_ok=True)
@@ -308,7 +318,6 @@ class BrowserService:
             print("total height ==>", total_height)
             self.driver.set_window_size(1920, total_height)
             print("-----")
-            #time.sleep(2)
 
             # Take screenshot
             print("before screenshot")
