@@ -1,6 +1,7 @@
 """Clean MongoDB-only state management for ANI-Crawler."""
 
 import hashlib
+import os
 import time
 from datetime import datetime, timedelta
 from typing import Set, Dict, Optional, List
@@ -410,9 +411,24 @@ class MongoStateAdapter:
     def load_progress(self) -> None:
         """Load saved crawl progress from MongoDB."""
         try:
+            # Check for fresh start mode
+            fresh_start = os.getenv('FRESH_START', 'false').lower() == 'true'
+            auto_cleanup = os.getenv('AUTO_CLEANUP_ON_CONFIG_CHANGE', 'false').lower() == 'true'
+            
+            if fresh_start:
+                print("🔄 FRESH_START mode enabled - clearing all existing data...")
+                self._clean_all_data()
+                self._initialize_fresh_state()
+                return
+            
             # Load site state
             site_doc = self.db.site_states.find_one({"site_id": self.site_id})
             if site_doc:
+                # Check if config has changed (different target URLs)
+                if auto_cleanup and self._config_has_changed(site_doc):
+                    print("🔄 Configuration change detected - cleaning incompatible URLs...")
+                    self._clean_incompatible_urls()
+                
                 self.total_pages_estimate = site_doc.get('total_pages_estimate', 5196)
                 self.cycle_start_time = site_doc.get('cycle_start_time')
                 self.current_cycle = site_doc.get('current_cycle', 1)
@@ -1943,3 +1959,120 @@ class MongoStateAdapter:
         except Exception as e:
             print(f"Error calculating pages per hour: {e}")
             return 0.0 
+    
+    def _config_has_changed(self, site_doc: dict) -> bool:
+        """Check if configuration has changed since last run."""
+        try:
+            # Get stored target URLs from site state
+            stored_target_urls = site_doc.get('target_urls', [])
+            
+            # Compare with current TARGET_URLS from config
+            from src.config import TARGET_URLS
+            current_target_urls = list(TARGET_URLS)
+            
+            # Check if URLs are different
+            if set(stored_target_urls) != set(current_target_urls):
+                print(f"📋 Config change detected:")
+                print(f"   Stored URLs: {stored_target_urls}")
+                print(f"   Current URLs: {current_target_urls}")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"⚠️ Error checking config changes: {e}")
+            return False
+    
+    def _clean_incompatible_urls(self):
+        """Clean URLs that don't match current configuration."""
+        try:
+            from src.config import TARGET_URLS, BASE_URL
+            
+            # Get base domain from config
+            from urllib.parse import urlparse
+            target_domain = urlparse(list(TARGET_URLS)[0]).netloc if TARGET_URLS else None
+            
+            if target_domain:
+                # Count URLs that don't match current domain
+                incompatible_count = self.db.url_states.count_documents({
+                    "site_id": self.site_id,
+                    "url": {"$not": {"$regex": target_domain}}
+                })
+                
+                if incompatible_count > 0:
+                    print(f"🗑️ Removing {incompatible_count} incompatible URLs...")
+                    
+                    # Remove incompatible URLs
+                    self.db.url_states.delete_many({
+                        "site_id": self.site_id,
+                        "url": {"$not": {"$regex": target_domain}}
+                    })
+                    
+                    # Clean related data
+                    self.db.page_changes.delete_many({
+                        "site_id": self.site_id,
+                        "url": {"$not": {"$regex": target_domain}}
+                    })
+                    
+                    print(f"✅ Removed incompatible URLs for domain: {target_domain}")
+            
+            # Update site state with new target URLs
+            self.db.site_states.update_one(
+                {"site_id": self.site_id},
+                {"$set": {
+                    "target_urls": list(TARGET_URLS),
+                    "base_url": BASE_URL,
+                    "config_updated_at": datetime.now()
+                }},
+                upsert=True
+            )
+            
+        except Exception as e:
+            print(f"⚠️ Error cleaning incompatible URLs: {e}")
+    
+    def _clean_all_data(self):
+        """Clean all data for fresh start."""
+        try:
+            print("🗑️ Cleaning all existing data...")
+            
+            # Clear all collections for this site
+            collections = ['url_states', 'page_changes', 'daily_stats', 'performance_history', 'site_states']
+            
+            for collection in collections:
+                result = self.db[collection].delete_many({"site_id": self.site_id})
+                print(f"   Cleared {collection}: {result.deleted_count} documents")
+            
+            print("✅ All data cleaned for fresh start")
+            
+        except Exception as e:
+            print(f"❌ Error cleaning all data: {e}")
+    
+    def _initialize_fresh_state(self):
+        """Initialize completely fresh state."""
+        try:
+            from src.config import TARGET_URLS, BASE_URL
+            
+            # Clear memory
+            self.visited_urls = set()
+            self.remaining_urls = set(TARGET_URLS)
+            self.next_crawl = {}
+            self.url_status = {}
+            self.daily_stats = {}
+            self.performance_history = []
+            
+            # Initialize fresh site state
+            self.db.site_states.insert_one({
+                "site_id": self.site_id,
+                "total_pages_estimate": self.total_pages_estimate,
+                "cycle_start_time": datetime.now(),
+                "current_cycle": 1,
+                "is_first_cycle": True,
+                "created_at": datetime.now(),
+                "target_urls": list(TARGET_URLS),
+                "base_url": BASE_URL
+            })
+            
+            print("🆕 Fresh state initialized successfully")
+            
+        except Exception as e:
+            print(f"❌ Error initializing fresh state: {e}")
