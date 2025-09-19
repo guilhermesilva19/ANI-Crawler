@@ -46,13 +46,13 @@ NEXT_CRAWL_FILE = "next_crawl.pkl"
 SCANNED_PAGES_FILE = "scanned_pages.txt"
 
 # Base URL Configuration
-BASE_URL = "https://www.ato.gov.au"
+BASE_URL = "https://www.ahpra.gov.au"
 
 # URLs to exclude from crawling
 EXCLUDE_PREFIXES = [
-    "https://www.ato.gov.au/newsroom",
-    "https://ministers.ato.gov.au/clare",
-    "https://www.ato.gov.au/news"
+    "https://www.ahpra.gov.au/newsroom",
+    "https://ministers.ahpra.gov.au/clare",
+    "https://www.ahpra.gov.au/news"
 ]
 
 # Browser Configuration
@@ -71,7 +71,7 @@ CHROME_OPTIONS = {
 
 # Target URLs
 TARGET_URLS = [
-    "https://www.ato.gov.au/",
+    "https://www.ahpra.gov.au/",
 ] 
 
 MONGODB_URI = os.getenv('MONGODB_URI')  # mongodb+srv://username:password@cluster.mongodb.net/
