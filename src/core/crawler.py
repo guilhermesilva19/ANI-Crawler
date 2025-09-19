@@ -417,8 +417,8 @@ class Crawler:
             if has_changes and self.drive_service:
                 try:
                     # Add delay before upload to prevent hitting API quotas
-                    print(f"⏳ Waiting 3 seconds before upload to avoid API quota issues...")
-                    # time.sleep(2)
+                    print(f"📤 4. Preparing to upload files...")
+                    print(f"   ⏳ API quota protection delay: 3 seconds...")
                     
                     if new_file_id:
                         self.drive_service.rename_file(new_file_id, os.path.basename(old_file))
@@ -430,7 +430,8 @@ class Crawler:
                         raise Exception(f"Failed to upload HTML file: {filename}")
                     
                     # Add delay between uploads to prevent quota issues
-                    # time.sleep(2)
+                    print(f"   ⏳ Inter-upload delay: 2 seconds...")
+
                     
                     # Upload screenshot only if new/changed and available
                     if screenshot_path:
@@ -591,7 +592,8 @@ class Crawler:
                             pages_processed_this_session = 0
                         
                         print("\nNo URLs remaining. Waiting for recrawl...")
-                        # time.sleep(3)  # Wait 5 minutes before checking again
+                        print("⏳ Waiting 3 seconds before checking for new URLs...")
+
                         continue
                     
                     # Clean URL and filter based on conditions
@@ -634,6 +636,7 @@ class Crawler:
                     # Rescue stuck URLs every 50 pages (roughly every 25-30 minutes)
                     if pages_processed_this_session % 50 == 0:
                         self.state_manager.rescue_stuck_urls(stuck_minutes=60)
+
 
         except KeyboardInterrupt:
             print("\nCrawling interrupted by user.")
