@@ -7,11 +7,14 @@ from datetime import datetime, timedelta
 from typing import Dict, Set, Optional, Tuple, List, Any
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
-from collections import defaultdict
+
+
 import gc
 import re
 import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed, Future
+
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.services.browser_service import BrowserService
 from src.services.drive_service import DriveService
 from src.services.slack_service import SlackService
@@ -20,7 +23,6 @@ from src.services.scheduler_service import SchedulerService
 from src.utils.content_comparison import compare_content, extract_links
 from src.utils.mongo_state_adapter import MongoStateAdapter
 from src.config import CHECK_PREFIX, PROXY_URL, PROXY_USERNAME, PROXY_PASSWORD, TOP_PARENT_ID, EXCLUDE_PREFIXES
-from src.health_exclusions import should_exclude_health_url, get_health_url_priority
 
 __all__ = ['Crawler']
 
@@ -36,35 +38,6 @@ class Crawler:
         self.memory_check_interval = 50  # Check memory every 50 pages
         self.gc_threshold = 0.8  # Force garbage collection at 80% memory usage
         
-        # Enhanced concurrency settings
-        self.max_concurrent_domains = int(os.getenv('MAX_CONCURRENT_DOMAINS', '3'))
-        self.max_workers_per_domain = int(os.getenv('MAX_WORKERS_PER_DOMAIN', '2'))
-        self.domain_delays = defaultdict(lambda: 10)  # Per-domain delays (default 10s)
-        self.domain_last_request = defaultdict(lambda: datetime.min)
-        
-        # ETag and caching support
-        self.etag_cache = {}  # URL -> {etag, last_modified, last_check}
-        self.priority_domains = {
-            'education.gov.au': 1,  # Highest priority
-            'ato.gov.au': 2,
-            'ndis.gov.au': 2,  
-            'ahpra.gov.au': 2,
-            'health.gov.au': 3  # Lower priority until split
-        }
-        
-        # Crawl frequency based on priority (hours)
-        self.crawl_frequencies = {
-            1: 4,   # Every 4 hours for high priority
-            2: 8,   # Every 8 hours for medium priority  
-            3: 24,  # Every 24 hours for low priority
-            4: 72   # Every 72 hours for very low priority (old content)
-        }
-        
-        # Health crawler control
-        self.health_crawler_enabled = os.getenv('HEALTH_CRAWLER_ENABLED', 'false').lower() == 'true'
-        if not self.health_crawler_enabled:
-            print("⏸️  Health crawler disabled per client request")
-        
         # Initialize Google Drive service (optional)
         try:
             self.drive_service = DriveService()
@@ -78,9 +51,7 @@ class Crawler:
                     'successful': 0,
                     'failed': 0,
                     'quota_errors': 0,
-                    'other_errors': 0,
-                    'skipped_unchanged': 0,
-                    'etag_hits': 0
+                    'other_errors': 0
                 }
         except Exception as e:
             print(f"⚠️  Google Drive service failed to initialize: {e}")
@@ -259,39 +230,6 @@ class Crawler:
         """Process a single page: fetch, compare, and store changes."""
         start_time = time.time()
         page_type = "normal"
-        
-        # Skip health domain if disabled
-        if not self.health_crawler_enabled and 'health.gov.au' in url:
-            print(f"⏸️  Skipping health domain (disabled): {url}")
-            self.state_manager.add_visited_url(url)
-            return
-        
-        # Check if page should be crawled based on priority and timing
-        url_info = self.state_manager.get_url_info(url)
-        last_crawled = url_info.get('last_crawled') if url_info else None
-        
-        if not self.should_crawl_now(url, last_crawled):
-            # Skip this URL for now, but don't mark as visited
-            return
-        
-        # Check domain rate limiting
-        if not self.can_process_domain(url):
-            return
-        
-        # Update domain timing
-        self.update_domain_timing(url)
-        
-        # Check ETag/Last-Modified headers first (much faster)
-        needs_update, header_info = self.check_page_headers(url)
-        if not needs_update:
-            # Page hasn't changed, mark as visited and skip
-            self.state_manager.add_visited_url(url)
-            crawl_time = time.time() - start_time
-            self.state_manager.record_page_crawl(url, crawl_time, "unchanged")
-            if hasattr(self, 'upload_stats'):
-                self.upload_stats['skipped_unchanged'] += 1
-            print(f"✅ Page unchanged (skipped): {url}")
-            return
         
         # Create fresh browser instance for this page to prevent degradation
         page_browser = BrowserService(self.proxy_options)
@@ -600,8 +538,8 @@ class Crawler:
             if has_changes and self.drive_service:
                 try:
                     # Add delay before upload to prevent hitting API quotas
-                    print(f"⏳ Waiting 3 seconds before upload to avoid API quota issues...")
-                    time.sleep(3)
+                    print(f"📤 4. Preparing to upload files...")
+                    print(f"   ⏳ API quota protection delay: 3 seconds...")
                     
                     if new_file_id:
                         self.drive_service.rename_file(new_file_id, os.path.basename(old_file))
@@ -613,7 +551,8 @@ class Crawler:
                         raise Exception(f"Failed to upload HTML file: {filename}")
                     
                     # Add delay between uploads to prevent quota issues
-                    time.sleep(2)
+                    print(f"   ⏳ Inter-upload delay: 2 seconds...")
+
                     
                     # Upload screenshot only if new/changed and available
                     if screenshot_path:
@@ -757,160 +696,73 @@ class Crawler:
         return "; ".join(parts) if parts else "Page content changed"
 
     def run(self) -> None:
-        """Enhanced main crawl loop with domain-based concurrency and prioritization."""
+        """Main crawl loop with threading and concurrent task handling."""
         try:
             pages_processed_this_session = 0
-            # Track active domains to prevent over-concurrency
-            active_domains = defaultdict(int)
-            
-            # Create a larger ThreadPoolExecutor for domain-based concurrency
-            max_total_workers = self.max_concurrent_domains * self.max_workers_per_domain
-            with ThreadPoolExecutor(max_workers=max_total_workers) as executor:
-                pending_futures = {}  # Future -> URL mapping
-                
+            # Create ThreadPoolExecutor with a maximum number of workers (adjust this value as needed)
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = []  # List to keep track of the future tasks
+
                 while True:
-                    # Get URLs ready for processing, grouped by domain
-                    ready_urls = self._get_ready_urls_by_domain(active_domains)
-                    
-                    if not ready_urls:
+                    url = self.state_manager.get_next_url()
+                    if not url:
                         # Check if we completed a full cycle
                         if pages_processed_this_session > 0:
                             print(f"\n🎉 Completed crawl cycle! Processed {pages_processed_this_session} pages this session.")
-                            self._log_session_stats()
                             self.state_manager.complete_cycle()
                             pages_processed_this_session = 0
                         
-                        print("\nNo URLs ready for processing. Waiting...")
-                        time.sleep(30)  # Wait before checking again
+                        print("\nNo URLs remaining. Waiting for recrawl...")
+                        print("⏳ Waiting 3 seconds before checking for new URLs...")
+
                         continue
                     
-                    # Submit new tasks for each ready URL
-                    for url in ready_urls:
-                        domain = urlparse(url).netloc
-                        
-                        # Submit the task
-                        future = executor.submit(self.process_page, url)
-                        pending_futures[future] = url
-                        active_domains[domain] += 1
-                        
-                        print(f"🚀 Queued: {url} (domain: {domain}, active: {active_domains[domain]})")
+                    # Clean URL and filter based on conditions
+                    url = url.rstrip("/")
+                    if (CHECK_PREFIX and url.startswith(CHECK_PREFIX)):
+                        continue
+                    if any(url.startswith(prefix) for prefix in EXCLUDE_PREFIXES):
+                        continue
                     
-                    # Process completed tasks
-                    if pending_futures:
-                        # Use a short timeout to keep checking for new URLs
-                        completed_futures = []
-                        for future in as_completed(pending_futures.keys(), timeout=1):
-                            completed_futures.append(future)
-                        
-                        for future in completed_futures:
-                            url = pending_futures.pop(future)
-                            domain = urlparse(url).netloc
-                            active_domains[domain] -= 1
-                            
-                            try:
-                                future.result()  # Wait for the task to finish
-                                pages_processed_this_session += 1
-                                print(f"✅ Completed: {url}")
-                            except Exception as exc:
-                                print(f"❌ Error processing {url}: {exc}")
-                            
-                            # Show progress every 10 pages
-                            if pages_processed_this_session % 10 == 0:
-                                stats = self.state_manager.get_progress_stats()
-                                print(f"\n📊 Progress: {stats['completed_pages']}/{stats['total_known_pages']} ({stats['progress_percent']}%) - {stats['pages_per_hour']:.0f} pages/hour")
-                                if stats['eta_datetime']:
-                                    print(f"⏰ ETA: {stats['eta_datetime'].strftime('%I:%M %p today' if stats['eta_datetime'].date() == datetime.now().date() else '%b %d at %I:%M %p')}")
-                                
-                                # Show upload efficiency stats
-                                if hasattr(self, 'upload_stats'):
-                                    total_checks = (self.upload_stats['successful'] + 
-                                                  self.upload_stats['failed'] + 
-                                                  self.upload_stats['skipped_unchanged'])
-                                    if total_checks > 0:
-                                        efficiency = self.upload_stats['skipped_unchanged'] / total_checks * 100
-                                        print(f"📈 Efficiency: {efficiency:.1f}% pages skipped via headers")
-                            
-                            # Memory optimization for Render deployment
-                            if pages_processed_this_session % self.memory_check_interval == 0:
-                                self._check_and_optimize_memory()
-                            
-                            # Rescue stuck URLs every 50 pages
-                            if pages_processed_this_session % 50 == 0:
-                                self.state_manager.rescue_stuck_urls(stuck_minutes=60)
-                    
-                    # Small delay to prevent overwhelming the system
-                    time.sleep(1)
+                    year_match = re.search(r'/(\d{4})/', url)
+                    if year_match:
+                        year = int(year_match.group(1))
+                        if year <= 2014:
+                            print(f"⏭️ Skipping old URL (year {year}): {url}")
+                            continue
+
+                    # Submit the task for processing and collect the future
+                    future = executor.submit(self.process_page, url)
+                    futures.append(future)  # Add future to the list
+
+                    # Show progress and handle completed tasks
+                    for future in as_completed(futures):
+                        try:
+                            future.result()  # Wait for the task to finish and process results
+                            pages_processed_this_session += 1
+                        except Exception as exc:
+                            print(f"❌ Error processing a page: {exc}")
+
+                    # Show progress every 10 pages
+                    if pages_processed_this_session % 10 == 0:
+                        stats = self.state_manager.get_progress_stats()
+                        print(f"\n📊 Progress: {stats['completed_pages']}/{stats['total_known_pages']} ({stats['progress_percent']}%) - {stats['pages_per_hour']:.0f} pages/hour")
+                        if stats['eta_datetime']:
+                            print(f"⏰ ETA: {stats['eta_datetime'].strftime('%I:%M %p today' if stats['eta_datetime'].date() == datetime.now().date() else '%b %d at %I:%M %p')}")
+
+                    # Memory optimization for Render deployment
+                    if pages_processed_this_session % self.memory_check_interval == 0:
+                        self._check_and_optimize_memory()
+
+                    # Rescue stuck URLs every 50 pages (roughly every 25-30 minutes)
+                    if pages_processed_this_session % 50 == 0:
+                        self.state_manager.rescue_stuck_urls(stuck_minutes=60)
+
 
         except KeyboardInterrupt:
             print("\nCrawling interrupted by user.")
         except Exception as e:
             print(f"Error: {e}")
-
-    def _get_ready_urls_by_domain(self, active_domains: Dict[str, int]) -> List[str]:
-        """Get URLs ready for processing, respecting domain concurrency limits."""
-        ready_urls = []
-        
-        # Try to get URLs for up to 10 attempts to find work
-        for _ in range(10):
-            url = self.state_manager.get_next_url()
-            if not url:
-                break
-            
-            # Clean URL and apply basic filters
-            url = url.rstrip("/")
-            if (CHECK_PREFIX and url.startswith(CHECK_PREFIX)):
-                continue
-            if any(url.startswith(prefix) for prefix in EXCLUDE_PREFIXES):
-                continue
-            
-            # Apply health domain exclusions
-            if 'health.gov.au' in url and should_exclude_health_url(url):
-                print(f"⏭️ Skipping excluded health URL: {url}")
-                continue
-            
-            # Skip old URLs (pre-2015)
-            year_match = re.search(r'/(\d{4})/', url)
-            if year_match:
-                year = int(year_match.group(1))
-                if year <= 2014:
-                    print(f"⏭️ Skipping old URL (year {year}): {url}")
-                    continue
-            
-            domain = urlparse(url).netloc
-            
-            # Check domain concurrency limits
-            if active_domains[domain] >= self.max_workers_per_domain:
-                # Put URL back and try another
-                self.state_manager.return_url_to_queue(url)
-                continue
-            
-            # Check if total concurrent domains would exceed limit
-            if len(active_domains) >= self.max_concurrent_domains and active_domains[domain] == 0:
-                # Put URL back and try another
-                self.state_manager.return_url_to_queue(url)
-                continue
-            
-            ready_urls.append(url)
-            
-            # Don't queue too many at once
-            if len(ready_urls) >= 5:
-                break
-        
-        return ready_urls
-
-    def _log_session_stats(self):
-        """Log session statistics."""
-        if hasattr(self, 'upload_stats'):
-            print(f"\n📊 Session Statistics:")
-            print(f"   ✅ Successful uploads: {self.upload_stats['successful']}")
-            print(f"   ❌ Failed uploads: {self.upload_stats['failed']}")
-            print(f"   📅 Skipped unchanged: {self.upload_stats['skipped_unchanged']}")
-            print(f"   🏷️  ETag hits: {self.upload_stats['etag_hits']}")
-            
-            total = sum(self.upload_stats.values())
-            if total > 0:
-                efficiency = (self.upload_stats['skipped_unchanged'] + self.upload_stats['etag_hits']) / total * 100
-                print(f"   📈 Overall efficiency: {efficiency:.1f}% bandwidth saved")
 
 
     def _categorize_file_type(self, url: str) -> str:

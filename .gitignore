@@ -48,6 +48,15 @@ ani-v3-service_account*.json
 *.pem
 *.key
 chrome_driver/
+credentials.json
+token.json
+configes.py
+
+# Dashboard Node modules
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/
+dashboard/build/
 chromedriver/
 page_copies/
 # Logs
@@ -56,4 +65,4 @@ logs/
 
 # OS specific
 .DS_Store
-Thumbs.db 
+Thumbs.db

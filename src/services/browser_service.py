@@ -23,11 +23,32 @@ class BrowserService:
         """Initialize browser service with optional proxy settings."""
         self.driver = None
         self.proxy_options = proxy_options
+        
+        # Session management variables
+        self.session_page_count = 0
+        self.max_pages_per_session = 50  # Restart browser after 50 pages
         self.setup_driver()
 
     def setup_driver(self) -> None:
         """Set up the Selenium WebDriver with appropriate options."""
         chrome_options = Options()
+        
+        # Set Chrome binary location based on platform
+        if os.name == 'posix':  # macOS or Linux
+            chrome_paths = [
+                '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',  # macOS default
+                '/usr/bin/google-chrome',  # Linux default
+                '/usr/bin/google-chrome-stable',  # Linux stable
+                '/usr/bin/chromium-browser',  # Linux Chromium
+            ]
+            # Find the first existing Chrome binary
+            chrome_binary = next((path for path in chrome_paths if os.path.exists(path)), None)
+            if chrome_binary:
+                chrome_options.binary_location = chrome_binary
+            else:
+                print("⚠️  Chrome binary not found in common locations. Please install Chrome browser.")
+        else:  # Windows
+            chrome_options.binary_location = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
         
         # Add Chrome options from config
         if CHROME_OPTIONS.get('headless'):
@@ -60,6 +81,23 @@ class BrowserService:
         chrome_options.add_argument("--disable-ipc-flooding-protection")
         chrome_options.add_argument("--remote-debugging-port=9222")
 
+        # Disable background processes that slow down crawling
+        chrome_options.add_argument("--disable-background-networking")
+        chrome_options.add_argument("--disable-default-apps")
+        chrome_options.add_argument("--disable-sync")
+        chrome_options.add_argument("--disable-web-security")
+        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+        chrome_options.add_argument("--memory-pressure-off")
+        chrome_options.add_argument("--max_old_space_size=4096")
+        chrome_options.add_argument("--disable-client-side-phishing-detection")
+        chrome_options.add_argument("--disable-component-extensions-with-background-pages")
+        chrome_options.add_argument("--disable-default-apps")
+        chrome_options.add_argument("--disable-hang-monitor")
+        chrome_options.add_argument("--disable-popup-blocking")
+        chrome_options.add_argument("--disable-prompt-on-repost")
+        chrome_options.add_argument("--disable-domain-reliability")
+        chrome_options.add_argument("--disable-component-update")
+
         try:
             # Configure selenium-wire with proxy if provided
             seleniumwire_options = {}
@@ -83,83 +121,108 @@ class BrowserService:
             print(f"\nError setting up WebDriver: {e}")
             raise
 
-    def check_headers_only(self, url: str, cached_headers: Optional[Dict] = None) -> Tuple[bool, Optional[Dict]]:
-        """Efficiently check page headers without downloading full content.
-        
-        Returns:
-            (has_changed, header_info) - has_changed=True if page should be fetched
-        """
+    def wait_for_page_ready(self, timeout: int = 15) -> None:
+        """Smart page load detection with adaptive waiting."""
+        print(f"⏳ 1. Waiting for page to load (max {timeout}s timeout)...")
         try:
-            headers = {
-                'User-Agent': CHROME_OPTIONS.get('user_agent', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'),
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate',
-                'Connection': 'keep-alive',
-            }
+            start_time = time.time()
             
-            # Add conditional headers if we have cached info
-            if cached_headers:
-                if cached_headers.get('etag'):
-                    headers['If-None-Match'] = cached_headers['etag']
-                if cached_headers.get('last_modified'):
-                    headers['If-Modified-Since'] = cached_headers['last_modified']
+            # Step 1: Wait for document ready state
+            print("   📄 Waiting for document ready state...")
+            WebDriverWait(self.driver, timeout).until(
+                lambda driver: driver.execute_script("return document.readyState") == "complete"
+            )
             
-            # Use requests for header checking (much faster than Selenium)
-            response = requests.head(url, headers=headers, timeout=10, allow_redirects=True)
+            # Step 2: Wait for network activity to settle
+            print("   🌐 Waiting for network activity to settle...")
+            network_quiet_time = 0
+            last_request_count = 0
             
-            # Handle 304 Not Modified
-            if response.status_code == 304:
-                return False, cached_headers
+            while time.time() - start_time < timeout:
+                try:
+                    # Count active network requests
+                    current_requests = len(self.driver.requests)
+                    
+                    # If no new requests for 2 seconds, consider page ready
+                    if current_requests == last_request_count:
+                        network_quiet_time += 0.5
+                        if network_quiet_time >= 2.0:  # 2 seconds of network quiet
+                            break
+                    else:
+                        network_quiet_time = 0  # Reset counter
+                        last_request_count = current_requests
+                    
+                    
+                except Exception:
+                    # Fallback: just wait for DOM ready + 1 second
+                    print("   ⚠️ Network check failed, using fallback delay: 1 second")
+
+                    break
             
-            # Extract useful headers
-            header_info = {
-                'etag': response.headers.get('ETag'),
-                'last_modified': response.headers.get('Last-Modified'),
-                'content_length': response.headers.get('Content-Length'),
-                'content_type': response.headers.get('Content-Type'),
-                'status_code': response.status_code
-            }
+            # Step 3: Final check for dynamic content (minimal wait)
+            print("   ⏱️ Final stability check: 0.5 seconds")
+ # Very short final wait
             
-            # Check if headers indicate change
-            if cached_headers:
-                etag_changed = (header_info.get('etag') != cached_headers.get('etag'))
-                modified_changed = (header_info.get('last_modified') != cached_headers.get('last_modified'))
-                
-                # If we have ETags or Last-Modified and they haven't changed, skip
-                if not etag_changed and not modified_changed:
-                    if header_info.get('etag') or header_info.get('last_modified'):
-                        return False, header_info
-            
-            return True, header_info
+            elapsed = time.time() - start_time
+            print(f"✅ Page ready in {elapsed:.1f} seconds")
             
         except Exception as e:
-            print(f"⚠️  Header check failed for {url}: {e}")
-            # On error, assume page should be fetched
-            return True, None
+            print(f"⚠️ Smart wait failed, using fallback delay: 2 seconds - {e}")
+
+
+    def should_restart_browser(self) -> bool:
+        """Check if browser session should be restarted."""
+        return (
+            self.session_page_count >= self.max_pages_per_session or 
+            not self.driver or 
+            not self._is_browser_responsive()
+        )
+    
+    def _is_browser_responsive(self) -> bool:
+        """Check if browser is still responsive."""
+        try:
+            # Test if browser is responsive by checking current URL
+            _ = self.driver.current_url
+            return True
+        except Exception:
+            return False
+    
+    def restart_browser_if_needed(self) -> None:
+        """Restart browser session if needed."""
+        if self.should_restart_browser():
+            print(f"🔄 Restarting browser session (processed {self.session_page_count} pages)")
+            self.quit()
+            self.session_page_count = 0
+            self.setup_driver()
+    
+    def increment_page_count(self) -> None:
+        """Increment the page counter for session management."""
+        self.session_page_count += 1
+        if self.session_page_count % 10 == 0:  # Log every 10 pages
+            print(f"📊 Session stats: {self.session_page_count}/{self.max_pages_per_session} pages processed")
 
     def quit(self) -> None:
         """Safely quit the browser."""
         if self.driver:
-            self.driver.quit()
-            print(f"   🗑️  Browser instance terminated")
+            try:
+                self.driver.quit()
+                print(f"   🗑️  Browser instance terminated (processed {self.session_page_count} pages)")
+            except Exception as e:
+                print(f"   ⚠️  Error during browser quit: {e}")
+            finally:
+                self.driver = None
 
     def get_page(self, url: str) -> Tuple[Optional[BeautifulSoup], int]:
         """Load a page and return its parsed content along with HTTP status code."""
         try:
+            # Check if browser needs restarting before processing
+            self.restart_browser_if_needed()
+            
             print(f"🔍 Loading page: {url}")
             self.driver.get(url)
             
-            # Wait for page to load with better validation
-            time.sleep(5)  # Initial wait
-            
-            # Wait for page to be ready
-            WebDriverWait(self.driver, 20).until(
-                lambda driver: driver.execute_script("return document.readyState") == "complete"
-            )
-            
-            # Additional wait for dynamic content
-            time.sleep(3)
+            # Smart page load detection (replaces fixed 8-second wait)
+            self.wait_for_page_ready(timeout=15)
             
             # Get final HTTP status from selenium-wire (after redirects)
             status_code = 200  # Default to success
@@ -203,6 +266,9 @@ class BrowserService:
             # Check soup content
             soup_text = soup.get_text(strip=True)
             print(f"✅ Page loaded successfully: {len(soup_text)} characters of text content")
+
+            # Increment page counter for session management
+            self.increment_page_count()
             
             return soup, status_code
             
@@ -212,15 +278,20 @@ class BrowserService:
 
     def scroll_full_page(self, pause_time: float = 1.5) -> None:
         """Scroll down incrementally until the bottom of the page is reached."""
+        print(f"⏬ 2. Scrolling through page (pausing {pause_time}s between scrolls)...")
         try:
             last_height = self.driver.execute_script("return document.body.scrollHeight")
+            scroll_count = 0
             while True:
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                scroll_count += 1
+                print(f"   📜 Scroll #{scroll_count} - waiting {pause_time}s for content to load...")
                 time.sleep(pause_time)
                 new_height = self.driver.execute_script("return document.body.scrollHeight")
                 if new_height == last_height:
                     break
                 last_height = new_height
+            print(f"✅ Scrolling complete - {scroll_count} scrolls performed")
         except Exception as e:
             print(f"\nError scrolling page: {e}")
 
@@ -228,8 +299,11 @@ class BrowserService:
         """Capture and save a full-page screenshot."""
         try:
             self.scroll_full_page()
+            print("📸 3. Preparing to take screenshot...")
+            print("   ⬆️ Scrolling back to top of page...")
             self.driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(2)
+            print("   ⏱️ Waiting 2 seconds for page to stabilize before screenshot...")
+
 
             # Create screenshot directory if it doesn't exist
             os.makedirs(SCREENSHOT_DIR, exist_ok=True)
@@ -245,7 +319,6 @@ class BrowserService:
             print("total height ==>", total_height)
             self.driver.set_window_size(1920, total_height)
             print("-----")
-            time.sleep(2)
 
             # Take screenshot
             print("before screenshot")

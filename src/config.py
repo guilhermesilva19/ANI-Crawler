@@ -51,8 +51,6 @@ BASE_URL = "https://ndis.gov.au"
 # URLs to exclude from crawling
 EXCLUDE_PREFIXES = [
     "https://ndis.gov.au/media",
-    "https://ndis.gov.au/news",
-    "https://ndis.gov.au/media",
     "https://ndis.gov.au/news" 
 ]
 
@@ -76,5 +74,5 @@ TARGET_URLS = [
 ] 
 
 MONGODB_URI = os.getenv('MONGODB_URI')  # mongodb+srv://username:password@cluster.mongodb.net/
-SITE_ID = os.getenv('SITE_ID', 'health_gov_au')  # Unique identifier for this site
+SITE_ID = os.getenv('SITE_ID', 'ndis_gov_au')  # Unique identifier for this site
 SITE_NAME = os.getenv('SITE_NAME', 'Department of Education')  # Human-readable site name
