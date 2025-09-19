@@ -51,8 +51,6 @@ BASE_URL = "https://treasury.gov.au"
 # URLs to exclude from crawling
 EXCLUDE_PREFIXES = [
     "https://treasury.gov.au/media",
-    "https://treasury.gov.au/news",
-    "https://treasury.gov.au/media",
     "https://treasury.gov.au/news" 
 ]
 

@@ -138,9 +138,12 @@ class Crawler:
 
         try:
             # Fetch and parse page
+            print("BEFORE GET PAGE", url)
             soup, status_code = page_browser.get_page(url)
+            print("AFTER GET PAGE")
             # Check for deleted page before processing
             is_deleted_page = self.state_manager.update_url_status(url, status_code)
+            print("AFTER UPDATE URL STATUS", is_deleted_page)
             if is_deleted_page:
                 # Get last successful access time for the alert
                 url_status = self.state_manager.url_status.get(url, {})
@@ -414,8 +417,8 @@ class Crawler:
             if has_changes and self.drive_service:
                 try:
                     # Add delay before upload to prevent hitting API quotas
-                    print(f"⏳ Waiting 3 seconds before upload to avoid API quota issues...")
-                    time.sleep(3)
+                    print(f"📤 4. Preparing to upload files...")
+                    print(f"   ⏳ API quota protection delay: 3 seconds...")
                     
                     if new_file_id:
                         self.drive_service.rename_file(new_file_id, os.path.basename(old_file))
@@ -427,7 +430,8 @@ class Crawler:
                         raise Exception(f"Failed to upload HTML file: {filename}")
                     
                     # Add delay between uploads to prevent quota issues
-                    time.sleep(2)
+                    print(f"   ⏳ Inter-upload delay: 2 seconds...")
+
                     
                     # Upload screenshot only if new/changed and available
                     if screenshot_path:
@@ -588,7 +592,8 @@ class Crawler:
                             pages_processed_this_session = 0
                         
                         print("\nNo URLs remaining. Waiting for recrawl...")
-                        time.sleep(3)  # Wait 5 minutes before checking again
+                        print("⏳ Waiting 3 seconds before checking for new URLs...")
+
                         continue
                     
                     # Clean URL and filter based on conditions
@@ -632,8 +637,6 @@ class Crawler:
                     if pages_processed_this_session % 50 == 0:
                         self.state_manager.rescue_stuck_urls(stuck_minutes=60)
 
-                    # Polite delay between requests
-                    time.sleep(30)
 
         except KeyboardInterrupt:
             print("\nCrawling interrupted by user.")
