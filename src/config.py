@@ -80,7 +80,6 @@ TARGET_URLS = [
     "https://www.health.gov.au/",
 ] 
 
-
 MONGODB_URI = os.getenv('MONGODB_URI')  # mongodb+srv://username:password@cluster.mongodb.net/
 SITE_ID = os.getenv('SITE_ID', 'health_gov_au')  # Unique identifier for this site
 SITE_NAME = os.getenv('SITE_NAME', 'Department of Health')  # Human-readable site name

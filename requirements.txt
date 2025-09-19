@@ -63,3 +63,5 @@ zstandard==0.23.0
 # MongoDB support (optional - fallback to file-based if not available)
 pymongo
 motor
+ 
+psutil
